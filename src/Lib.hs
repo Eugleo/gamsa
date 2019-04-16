@@ -2,33 +2,17 @@ module Lib where
 
 import           Control.Monad                        (foldM, mapM_, replicateM)
 import           Data.Function                        (on)
-import           Data.List                            (find, maximumBy,
-                                                       partition, sort,
-                                                       transpose)
+import           Data.List                            (maximumBy, partition,
+                                                       sort, sortBy, transpose)
 import           Data.Ord                             (Down (..))
 import           Data.Random
 import           Data.Random.Distribution.Exponential (exponential)
-import           Data.Semigroup                       (Max (..))
-import           Data.Vector                          (Vector, (!), (//))
-import qualified Data.Vector                          as V (empty, enumFromTo,
-                                                            fromList, head,
-                                                            replicate,
-                                                            singleton, tail,
-                                                            take, zip, (++))
-import qualified Data.Vector.Algorithms.Intro         as I (partialSortBy, sort)
-import qualified Data.Vector.Generic                  as G (Vector, modify)
 import           Debug.Trace                          (traceShow)
 
-type Generation = Vector Alignment
-
-partialSortBy :: (G.Vector v e) => (e -> e -> Ordering) -> Int -> v e -> v e
-partialSortBy f k = G.modify (\v -> I.partialSortBy f v k)
-
-sortVect :: (G.Vector v e, Ord e) => v e -> v e
-sortVect = G.modify I.sort
+type Generation = [Alignment]
 
 data Alignment = Alignment
-  { alSeqs  :: Vector Seq
+  { alSeqs  :: [Seq]
   , alScore :: Double
   } deriving (Show)
 
@@ -48,7 +32,7 @@ data State =
 
 data Seq = Seq
   { len         :: Int
-  , aa          :: Vector Char
+  , aa          :: String
   , gaps        :: [Gap]
   , seedGapMean :: Double -- TODO: Move this to alignment or someplace else
   } deriving (Show, Eq)
@@ -71,11 +55,11 @@ run a = do
   fin <- doRuns state startingG 2000
   return $ maximum fin
 
-maximumOn :: Ord b => (a -> b) -> Vector a -> a
+maximumOn :: Ord b => (a -> b) -> [a] -> a
 maximumOn f = maximumBy (\a b -> compare (f a) (f b))
 
 populate :: State -> Alignment -> RVar Generation
-populate st a = V.fromList <$> go 100 []
+populate st a = go 100 []
   where
     go 0 acc = return acc
     go n acc = mutate st a >>= \(na, _) -> go (n - 1) (na : acc)
@@ -92,50 +76,49 @@ nextGen :: State -> Generation -> RVar (Generation, State)
 nextGen st g = do
   let top = top5 g
   (als, ns) <- go st 95 []
-  return (als V.++ top, newState ns)
+  return (als ++ top, newState ns)
   where
     go :: State -> Int -> [Alignment] -> RVar (Generation, State)
-    go s 0 acc = return (V.fromList acc, s)
+    go s 0 acc = return (acc, s)
     go s n acc = do
       best <- tournament g
       (ng, ns) <- mutate s best
       go ns (n - 1) (ng : acc)
 
-top5 :: Generation -> Vector Alignment
-top5 = V.take 5 . partialSortBy (compare `on` Down) 5
+top5 :: Generation -> [Alignment]
+top5 = take 5 . sortBy (compare `on` Down)
 
 tournament :: Generation -> RVar Alignment
 tournament g = do
   indices <- replicateM 5 $ getRandomR (0, length g - 1)
-  return $ maximumBy (compare `on` Down) $ (g !) <$> indices
+  return $ maximumBy (compare `on` Down) $ (g !!) <$> indices
 
-score :: Vector Seq -> Double
+score :: [Seq] -> Double
 score al =
   1000 * meanColumnHomogenicity al + 20 * gapBlocks al -
   20 * columnsIncrement al
 
-meanColumnHomogenicity :: Vector Seq -> Double
+meanColumnHomogenicity :: [Seq] -> Double
 meanColumnHomogenicity al = mean $ map columnHomogenicity (transpose filled)
   where
     filled = fill al
     mean ns = sum ns / fromIntegral (length ns)
 
-fill :: Vector Seq -> [String]
-fill al = foldr (\a b -> fill' maxSeqLength a : b) [] al
+fill :: [Seq] -> [String]
+fill al = map (fill' maxSeqLength) al
   where
-    maxSeqLength = maximum . fmap seqLength $ al
+    maxSeqLength = seqLength . maximumOn seqLength $ al
     seqLength s = len s + foldr (\g acc -> snd g + acc) 0 (gaps s)
-    fill' n x =
-      let res = go x
-          l = length res
-       in (res ++ replicate (n - l) '-')
-    go Seq {aa = aa, gaps = gs} =
-      foldr (helper gs) [] (V.zip aa $ V.enumFromTo 1 (length aa))
-    helper :: [Gap] -> (Char, Int) -> String -> String
-    helper gs (c, i) acc =
-      case find ((== i) . fst) gs of
-        Nothing     -> c : acc
-        Just (_, l) -> c : replicate l '-' ++ acc
+
+fill' :: Int -> Seq -> String
+fill' n Seq {aa = aa, gaps = gaps} = go (sort gaps) (zip [1 ..] aa) aa 0
+  where
+    go :: [Gap] -> [(Int, Char)] -> String -> Int -> String
+    go _ [] acc l = acc ++ replicate (n - l) '-'
+    go [] str acc l = acc ++ map snd str ++ replicate (n - l) '-'
+    go gps@((start, leng):gs) ((i, c):xs) acc l
+      | start == i = go gs xs (c : replicate leng '-' ++ acc) (l + leng + 1)
+      | otherwise = go gps xs (c : acc) (l + 1)
 
 columnHomogenicity :: String -> Double
 columnHomogenicity al = fromIntegral numerator / fromIntegral denominator
@@ -144,7 +127,7 @@ columnHomogenicity al = fromIntegral numerator / fromIntegral denominator
     denominator = sqr . countCharReps id . sort $ al
     sqr x = x * x
 
-countCharReps :: (Int -> Int) -> [Char] -> Int
+countCharReps :: (Int -> Int) -> String -> Int
 countCharReps f str
   | null str = 0
   | otherwise = go 0 0 (head str) str
@@ -154,7 +137,7 @@ countCharReps f str
       | head cs == ch = go n (k + 1) ch (tail cs)
       | otherwise = go (n + f k) 0 (head cs) (tail cs)
 
-gapBlocks :: Vector Seq -> Double
+gapBlocks :: [Seq] -> Double
 gapBlocks seqs =
   if gb == 0
     then 0
@@ -162,7 +145,7 @@ gapBlocks seqs =
   where
     gb = foldr (\s acc -> acc + (length . gaps) s) 0 seqs
 
-columnsIncrement :: Vector Seq -> Double
+columnsIncrement :: [Seq] -> Double
 columnsIncrement seqs =
   if mSeq <= 1
     then 0
@@ -182,9 +165,9 @@ mutate st@(S a b c d e) al@Alignment {alSeqs = seqs, alScore = oldScore} = do
       let op = (ops !!) <$> opIndices
       let sts = (ps !!) <$> opIndices
       seqIndex <- getRandomR (0, length seqs - 1)
-      let s = seqs ! seqIndex
+      let s = seqs !! seqIndex
       newS <- foldM (\acc o -> o acc) s op
-      let newSeqs = seqs // [(seqIndex, newS)]
+      let newSeqs = updateAt seqIndex [newS] seqs
       let newScore = score newSeqs
       let newSt = go st sts opIndices (newScore - oldScore)
       return (Alignment newSeqs newScore, newSt)

@@ -5,9 +5,9 @@ import           Data.Vector (fromList)
 import           Lib
 
 mkAl :: [String] -> Alignment
-mkAl input = Alignment (fromList $ map mkSeq input) 0
+mkAl input = Alignment (map mkSeq input) 0
   where
-    mkSeq str = Seq (length (aa str)) (fromList $ aa str) (gps str) seed
+    mkSeq str = Seq (length (aa str)) (aa str) (gps str) seed
     seed :: Double
     seed =
       fromIntegral (sum (map snd (concatMap gps input))) /
