@@ -1,4 +1,7 @@
 module Main where
 
+import           Input
+import           Lib
+
 main :: IO ()
-main = putStrLn "Hello world"
+main = runIO inp >>= print

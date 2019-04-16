@@ -2,17 +2,20 @@ module Lib where
 
 import           Control.Monad                        (foldM, mapM_, replicateM)
 import           Data.Function                        (on)
-import           Data.List                            (find, group, maximumBy,
-                                                       partition, sort)
+import           Data.List                            (find, maximumBy,
+                                                       partition, sort,
+                                                       transpose)
 import           Data.Ord                             (Down (..))
 import           Data.Random
 import           Data.Random.Distribution.Exponential (exponential)
+import           Data.Semigroup                       (Max (..))
 import           Data.Vector                          (Vector, (!), (//))
-import qualified Data.Vector                          as V (enumFromTo, foldr,
+import qualified Data.Vector                          as V (empty, enumFromTo,
                                                             fromList, head,
-                                                            tail, take, zip,
-                                                            (++))
-import qualified Data.Vector.Algorithms.Intro         as I (partialSortBy)
+                                                            replicate,
+                                                            singleton, tail,
+                                                            take, zip, (++))
+import qualified Data.Vector.Algorithms.Intro         as I (partialSortBy, sort)
 import qualified Data.Vector.Generic                  as G (Vector, modify)
 import           Debug.Trace                          (traceShow)
 
@@ -20,6 +23,9 @@ type Generation = Vector Alignment
 
 partialSortBy :: (G.Vector v e) => (e -> e -> Ordering) -> Int -> v e -> v e
 partialSortBy f k = G.modify (\v -> I.partialSortBy f v k)
+
+sortVect :: (G.Vector v e, Ord e) => v e -> v e
+sortVect = G.modify I.sort
 
 data Alignment = Alignment
   { alSeqs  :: Vector Seq
@@ -55,7 +61,7 @@ getRandomR (a, b) = uniform a b
 runIO :: Alignment -> IO Alignment
 runIO a = do
   result <- runRVar (run a) StdRandom
-  mapM_ putStrLn . fill . alSeqs $ result
+  mapM_ print . fill . alSeqs $ result
   return result
 
 run :: Alignment -> RVar Alignment
@@ -105,58 +111,56 @@ tournament g = do
 
 score :: Vector Seq -> Double
 score al =
-  1000 * meanColumnHomogenicity al + 2000 * gapBlocks al -
-  2 * columnsIncrement al
+  1000 * meanColumnHomogenicity al + 20 * gapBlocks al -
+  20 * columnsIncrement al
 
 meanColumnHomogenicity :: Vector Seq -> Double
-meanColumnHomogenicity al =
-  mean $ map (columnHomogenicity (fill al)) [0 .. len (V.head al) - 1]
+meanColumnHomogenicity al = mean $ map columnHomogenicity (transpose filled)
   where
-    mean :: [Double] -> Double
+    filled = fill al
     mean ns = sum ns / fromIntegral (length ns)
 
 fill :: Vector Seq -> [String]
-fill al = fill' (maximum $ fmap (\s -> len s + sum (fmap snd (gaps s))) al) al
+fill al = foldr (\a b -> fill' maxSeqLength a : b) [] al
   where
-    fill' n xs
-      | null xs = []
-      | otherwise =
-        let res = go (V.head xs)
-            l = length res
-         in (if l < n
-               then res ++ replicate (n - l) '-'
-               else res) :
-            fill' n (V.tail xs)
-    go Seq {aa = aa, len = _, gaps = gs} =
-      V.foldr (helper gs) "" (V.zip aa $ V.enumFromTo 1 (length aa))
+    maxSeqLength = maximum . fmap seqLength $ al
+    seqLength s = len s + foldr (\g acc -> snd g + acc) 0 (gaps s)
+    fill' n x =
+      let res = go x
+          l = length res
+       in (res ++ replicate (n - l) '-')
+    go Seq {aa = aa, gaps = gs} =
+      foldr (helper gs) [] (V.zip aa $ V.enumFromTo 1 (length aa))
     helper :: [Gap] -> (Char, Int) -> String -> String
     helper gs (c, i) acc =
       case find ((== i) . fst) gs of
         Nothing     -> c : acc
         Just (_, l) -> c : replicate l '-' ++ acc
 
-columnHomogenicity :: [String] -> Int -> Double
-columnHomogenicity al n = fromIntegral numerator / fromIntegral denominator
+columnHomogenicity :: String -> Double
+columnHomogenicity al = fromIntegral numerator / fromIntegral denominator
   where
-    numerator :: Int
-    numerator =
-      sum . map (sqr . countWithoutGaps) . group . sort . map (!! n) $ al
-    denominator :: Int
-    denominator =
-      sqr . sum . map countWithoutGaps . group . sort . map (!! n) $ al
-    countWithGaps :: [a] -> Int
-    countWithGaps = length
-    countWithoutGaps ('-':_) = 0
-    countWithoutGaps xs      = length xs
+    numerator = countCharReps sqr . sort $ al
+    denominator = sqr . countCharReps id . sort $ al
     sqr x = x * x
+
+countCharReps :: (Int -> Int) -> [Char] -> Int
+countCharReps f str
+  | null str = 0
+  | otherwise = go 0 0 (head str) str
+  where
+    go n k ch cs
+      | null cs = n + f k
+      | head cs == ch = go n (k + 1) ch (tail cs)
+      | otherwise = go (n + f k) 0 (head cs) (tail cs)
 
 gapBlocks :: Vector Seq -> Double
 gapBlocks seqs =
   if gb == 0
     then 0
-    else 1 / gb
+    else 1 / fromIntegral gb
   where
-    gb = V.foldr (+) 0 (fmap (fromIntegral . length . gaps) seqs)
+    gb = foldr (\s acc -> acc + (length . gaps) s) 0 seqs
 
 columnsIncrement :: Vector Seq -> Double
 columnsIncrement seqs =
@@ -167,7 +171,7 @@ columnsIncrement seqs =
     mSeq = maximum $ fmap len seqs
     newMax = maximum $ fmap (\s -> len s + sum (map snd (gaps s))) seqs
 
--- TODO: Implemen 1.2 mutation probability
+-- TODO: Implement 1.2 mutation probability
 mutate :: State -> Alignment -> RVar (Alignment, State)
 mutate st@(S a b c d e) al@Alignment {alSeqs = seqs, alScore = oldScore} = do
   check <- getRandomR (1, 10)
@@ -204,7 +208,7 @@ updateMutation st (prob, tot, diff) i =
 
 createState :: [(Double, Int, Double)] -> State
 createState [a, b, c, d, e] = S a b c d e
-createState xs              = undefined
+createState _               = undefined
 
 newState :: State -> State
 newState (S a b c d e) =
