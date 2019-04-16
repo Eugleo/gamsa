@@ -1,10 +1,13 @@
 module Lib where
 
-import           Control.Monad.Random
-import           Data.List            (find, group, maximumBy, partition, sort,
-                                       sortOn)
-import           Data.Ord             (Down (..))
-import           Debug.Trace          (traceShow)
+import           Control.Monad                        (foldM, mapM_, replicateM)
+import           Data.List                            (find, group, groupBy,
+                                                       maximumBy, partition,
+                                                       sort, sortOn)
+import           Data.Ord                             (Down (..))
+import           Data.Random
+import           Data.Random.Distribution.Exponential (exponential)
+import           Debug.Trace                          (traceShow)
 
 type Generation = [Alignment]
 
@@ -19,32 +22,40 @@ data State =
   deriving (Show, Eq, Ord)
 
 data Seq = Seq
-  { len  :: Int
-  , aa   :: String
-  , gaps :: [Gap]
+  { len         :: Int
+  , aa          :: String
+  , gaps        :: [Gap]
+  , seedGapMean :: Double -- TODO: Move this to alignment or someplace else
   } deriving (Show, Eq)
 
 type Gap = (Int, Int)
 
-run :: Alignment -> IO Alignment
+getRandomR :: (Int, Int) -> RVar Int
+getRandomR (a, b) = uniform a b
+
+runIO :: Alignment -> IO Alignment
+runIO a = do
+  result <- runRVar (run a) StdRandom
+  mapM_ putStrLn . fill $ result
+  return result
+
+run :: Alignment -> RVar Alignment
 run a = do
   let state = S (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0)
   startingG <- populate state a
-  fin <- evalRandIO $ doRuns state startingG 1000
-  let res = maximumOn score fin
-  mapM_ putStrLn . fill $ res
-  return res
+  fin <- doRuns state startingG 2000
+  return $ maximumOn score fin
 
 maximumOn :: Ord b => (a -> b) -> [a] -> a
 maximumOn f = maximumBy (\a b -> compare (f a) (f b))
 
-populate :: MonadRandom m => State -> Alignment -> m Generation
+populate :: State -> Alignment -> RVar Generation
 populate st a = go 100 []
   where
     go 0 acc = return acc
     go n acc = mutate st a >>= \(na, _) -> go (n - 1) (na : acc)
 
-doRuns :: MonadRandom m => State -> Generation -> Int -> m Generation
+doRuns :: State -> Generation -> Int -> RVar Generation
 doRuns _ g 0 = return g
 doRuns st g n =
   traceShow
@@ -52,13 +63,13 @@ doRuns st g n =
     (nextGen st g >>= \(ng, ns) -> doRuns ns ng (n - 1))
 
 -- TODO: Find out if we should mutate the top5 as well
-nextGen :: MonadRandom m => State -> Generation -> m (Generation, State)
+nextGen :: State -> Generation -> RVar (Generation, State)
 nextGen st g = do
   let top = top5 g
   (als, ns) <- go st 95 []
   return (als ++ top, newState ns)
   where
-    go :: MonadRandom m => State -> Int -> [Alignment] -> m ([Alignment], State)
+    go :: State -> Int -> [Alignment] -> RVar ([Alignment], State)
     go s 0 acc = return (acc, s)
     go s n acc = do
       best <- tournament g
@@ -68,15 +79,15 @@ nextGen st g = do
 top5 :: Generation -> [Alignment]
 top5 = take 5 . sortOn (Down . score)
 
-tournament :: MonadRandom m => Generation -> m Alignment
+tournament :: Generation -> RVar Alignment
 tournament g = do
-  indices <- take 5 <$> getRandomRs (0, length g - 1)
+  indices <- replicateM 5 $ getRandomR (0, length g - 1)
   return $ head $ sortOn (Down . score) $ map (g !!) indices
 
 score :: Alignment -> Double
 score al =
-  1000 * meanColumnHomogenicity al + 20 * gapBlocks al -
-  20 * columnsIncrement al
+  1000 * meanColumnHomogenicity al + 2000 * gapBlocks al -
+  2 * columnsIncrement al
 
 meanColumnHomogenicity :: Alignment -> Double
 meanColumnHomogenicity al =
@@ -110,7 +121,9 @@ columnHomogenicity al n = fromIntegral numerator / fromIntegral denominator
     numerator =
       sum . map (sqr . countWithoutGaps) . group . sort . map (!! n) $ al
     denominator :: Int
-    denominator = sqr . sum . map countWithGaps . group . sort . map (!! n) $ al
+    denominator =
+      sqr . sum . map countWithoutGaps . group . sort . map (!! n) $ al
+    countWithGaps :: [a] -> Int
     countWithGaps = length
     countWithoutGaps ('-':_) = 0
     countWithoutGaps xs      = length xs
@@ -133,21 +146,24 @@ columnsIncrement seqs =
     mSeq = maximum $ map len seqs
     newMax = maximum $ map (\s -> len s + sum (map snd (gaps s))) seqs
 
-mutate :: MonadRandom m => State -> Alignment -> m (Alignment, State)
+mutate :: State -> Alignment -> RVar (Alignment, State)
 mutate st@(S a b c d e) al = do
-  count <- getRandomR (0, 3)
-  p <- take count <$> getRandoms
-  let oldScore = score al
-  let opIndices = map (pick st) p
-  let op = (ops !!) <$> opIndices
-  let sts = (ps !!) <$> opIndices
-  seqIndex <- getRandomR (0, length al - 1)
-  let s = al !! seqIndex
-  newS <- foldM (\acc o -> o acc) s op
-  let newA = take seqIndex al ++ [newS] ++ drop (seqIndex + 1) al
-  let newScore = score newA
-  let newSt = go st sts opIndices (newScore - oldScore)
-  return (newA, newSt)
+  check <- getRandomR (1, 10)
+  if check >= 2
+    then do
+      p <- replicateM 1 stdUniform
+      let oldScore = score al
+      let opIndices = map (pick st) p
+      let op = (ops !!) <$> opIndices
+      let sts = (ps !!) <$> opIndices
+      seqIndex <- getRandomR (0, length al - 1)
+      let s = al !! seqIndex
+      newS <- foldM (\acc o -> o acc) s op
+      let newA = take seqIndex al ++ [newS] ++ drop (seqIndex + 1) al
+      let newScore = score newA
+      let newSt = go st sts opIndices (newScore - oldScore)
+      return (newA, newSt)
+    else return (al, st)
   where
     ops = [insert, increase, decrease, delete, shift]
     ps = [a, b, c, d, e]
@@ -191,25 +207,24 @@ pick (S (ins, _, _) (inc, _, _) (dec, _, _) (del, _, _) (shf, _, _)) num =
       | otherwise = go (n + 1) r (r + p) ps
 
 -- TODO: Add pattern matching and simpler updates
-insert :: MonadRandom m => Seq -> m Seq
+insert :: Seq -> RVar Seq
 insert sq = do
   let s = gaps sq
-  -- TODO: Replace with exponential ditr. randomness
-  l <- getRandomR (1, 5)
+  l <- round <$> exponential (seedGapMean sq)
   i <- getRandomR (1, len sq - 1)
   let newS = (i, l) : filter ((/= i) . fst) s
-  return $ Seq (len sq) (aa sq) newS
+  return $ Seq (len sq) (aa sq) newS (seedGapMean sq)
 
-increase :: MonadRandom m => Seq -> m Seq
+increase :: Seq -> RVar Seq
 increase s@Seq {gaps = []} = return s
 increase sq = do
   let s = gaps sq
   i <- getRandomR (0, length s - 1)
   let (start, l) = s !! i
   let gs = take i s ++ [(start, l + 1)] ++ drop (i + 1) s
-  return $ Seq (len sq) (aa sq) gs
+  return $ Seq (len sq) (aa sq) gs (seedGapMean sq)
 
-decrease :: MonadRandom m => Seq -> m Seq
+decrease :: Seq -> RVar Seq
 decrease s@Seq {gaps = []} = return s
 decrease sq = do
   let s = gaps sq
@@ -217,11 +232,11 @@ decrease sq = do
   let (start, l) = s !! i
   if l - 1 == 0
     then let newS = take i s ++ drop (i + 1) s
-          in return $ Seq (len sq) (aa sq) newS
+          in return $ Seq (len sq) (aa sq) newS (seedGapMean sq)
     else let newS = take i s ++ [(start, l - 1)] ++ drop (i + 1) s
-          in return $ Seq (len sq) (aa sq) newS
+          in return $ Seq (len sq) (aa sq) newS (seedGapMean sq)
 
-shift :: MonadRandom m => Seq -> m Seq
+shift :: Seq -> RVar Seq
 shift s@Seq {gaps = []} = return s
 shift sq = do
   let s = gaps sq
@@ -230,29 +245,24 @@ shift sq = do
   i <- getRandomR (0, len sq - 1)
   let (ms, nms) = partition ((i ==) . fst) $ filter ((/=) gs . fst) s
   if null ms
-    then return $ Seq (len sq) (aa sq) $ (i, gl) : filter ((/=) gs . fst) nms
+    then return $
+         Seq
+           (len sq)
+           (aa sq)
+           ((i, gl) : filter ((/=) gs . fst) nms)
+           (seedGapMean sq)
     else let [(hs, hl)] = ms
           in return $
-             Seq (len sq) (aa sq) $
-             (hs, gl) : (gs, hl) : filter ((/=) gs . fst) nms
+             Seq
+               (len sq)
+               (aa sq)
+               ((hs, gl) : (gs, hl) : filter ((/=) gs . fst) nms)
+               (seedGapMean sq)
 
-delete :: MonadRandom m => Seq -> m Seq
+delete :: Seq -> RVar Seq
 delete s@Seq {gaps = []} = return s
 delete sq = do
   let s = gaps sq
   i <- getRandomR (0, length s - 1)
   let newS = take i s ++ drop (i + 1) s
-  return $ Seq (len sq) (aa sq) newS
-
-aa1 =
-  "TCATTGCAGCTTTACCTAGACACTGTTTCACACTCCTGGGAACTCCTGGGATCTTACAGAGTAGATCAAAACCACGTGGTCAAAAAGCCAGAGAATGATCCTGGCTGTAGT" --AGCAACTACAATTAGGGGACACCTGGCATCCAGGCCTCAACCTACTTCCCAGCAGGGTGTCACACTCCCCTGAAGACTGGATAACTGTCATGGAGGACTCCCAGTCAGATATCAGCATCGAGCTCCCTCTGAGTCAGGAGACATTTTCAGGCTTCTGAAAACTACTTCCTCCAGAAGATATTCTGTCCACTGCCTGTAGTGTTACCTAATTCCATGGAAGATCTGTTCCTGTCCCAGGATGTTGAGGAGTTGTTAGAAGACCCAGAGGAAGCCCATGTGTCAGCTTCTGCAGCACAGGACCCTGAAACTGAGGCCACTGCACCAGTCAATCCGTGGCCCCTGTCATCTTGTGCCCGTACCAAGGCAACTATGGCTTCCGCCTGGGCTTCCTGCAGTCAGAGACGGCCAAGTCTGCTAGGTGCACTCCCCTTCCCTCGATAAGCTATTCTGCCAGCTGGTGAAGACATGCCCTGTGCAGTTCTGGGTCAGCTTCACACCTCCAGCTGGTACCCGTGTCCATGGCATGGCCGTCTACAAGAAGTCACAACATACTACTAAGGTCGTGAGACGCTGCCCCCACCATGAGCGTTGCTCTGATGGTGATGGCCTGGCTCTTCCCCAGCATCTTATCCGGGTGGAAGGAAACCTGTATGCTGAGTATCTGGACGACAGGCACAGTGTGGTAGTACCGTATGGGCCACTTGAGCTCGGCCCCAACTATACCACCATCCACGACAAGTACATGTGTAATAGCTCCTGCATGGGCGGCATGAACCGCCGGCCCAACTTTACCATCATCACATTGGAAGACTCCAGTAGGAGGCTTCTGGAACCGGAAGCTTTGAGGTTCATGTTTGTCCCGGTCCAGGGAGAGACCATCTGACGGAGGAAGAAAATTTCCGCAAAAAGGATGAACATTGCCCCGAGCTGCCCTCGGGGAGTGCTAAGAGAGCACTGCCCACCAGCACAAGCTCCCTTCCCCAACAAAGAAAAAAACCAGTTGATGGAGAACATTCCACCCTTAAGATCCAAGGGCGTGAGAGCTTCTGAGAACTGAATGAGGCCTTGGAATTAAAGGATGCCCGTGCAGCAGAGGAGTCAGGAGACAGCAGGGCTCACTCCTGCCTCCAAACTAGAACCTTCCAAACTTTGATCAAGAAGGAAAGCCCAACTGCTAGCTTCCATCACTTCATTCCTCTCCTTTTCTGTCTTCCGATAGCTACCTGAAGACCAAGAGGGGAGGCCAGTCTACTTCCTGCCATATAAAAAAAGAAAAAAAAAAAATCAAGGAAGTGGGGCCTGACTCAGAGTGATAGTCTTGCATCCTGTCCCCATCACCAACTTCCCCCTCTCCTTTCTTGCCATTTTATGACTTTATGGCTTGTTATGACACCCAAAAACAATTCTGGTCCCTTCCGGCCGCCTTGTTTTACCTTGTAGATAGGGCTCAGCCTCCTCTATGAGTGCTGGAATGGGTTGGTAAGTTGCCAGGTCTCTGCTGGCCCAGCTGAAT"
-
-aa2 =
-  "CCTCCTTGGCTGTAGGTAGCGACTACAGTTAGGGGGCACCTAGCATTCAGGCCCTCATCCTCCTCCTTCCCAGCAGGGTGTCACGCTTCTCCGAAGACTGGATGACTGCCATGGAG" --GAGTCACAGTCGGATATCAGCCTCGAGCTCCCTCTGAGCCAGGAGACATTTTCAGGCTTATGGAAACTACTTCCTCCAGAAGATATCCTGCCATCACCTCACTGCATGGACGATCTGTTGCTGCCCCAGGATGTTGAGGAGTTTTTTGAAGGCCCAAGTGAAGCCCTCCGAGTGTCAGGAGCTCCTGCAGCACAGGACCCTGTCACCGAGACCCCTGGGCCAGTGGCCCCTGCCCCAGCCACTCCATGGCCCCTGTCATCTTTTGTCCCTTCTCAAAAAACTTACCAGGGCAACTATGGCTTCCACCTGGGCTTCCTGCAGTCTGGGACAGCCAAGTCTGTTATGTGCACGTACTCTCCTCCCCTCAATAAGCTATTCTGCCAGCTGGCGAAGACGTGCCCTGTGCAGTTGTGGGTCAGCGCCACACCTCCAGCTGGGAGCCGTGTCCGCGCCATGGCCATCTACAAGAAGTCACAGCACATGACGGAGGTCGTGAGACGCTGCCCCCACCATGAGCGCTGCTCCGATGGTGATGGCCTGGCTCCTCCCCAGCATCTTATCCGGGTGGAAGGAAATTTGTATCCCGAGTATCTGGAAGACAGGCAGACTTTTCGCCACAGCGTGGTGGTACCTTATGAGCCACCCGAGGCCGGCTCTGAGTATACCACCATCCACTACAAGTACATGTGTAATAGCTCCTGCATGGGGGGCATGAACCGCCGACCTATCCTTACCATCATCACACTGGAAGACTCCAGTGGGAACCTTCTGGGACGGGACAGCTTTGAGGTTCGTGTTTGTGCCTGCCCTGGGAGAGACCGCCGTACAGAAGAAGAAAATTTCCGCAAAAAGGAAGTCCTTTGCCCTGAACTGCCCCCAGGGAGCGCAAAGAGAGCGCTGCCCACCTGCACAAGCGCCTCTCCCCCGCAAAAGAAAAAACCACTTGATGGAGAGTATTTCACCCTCAAGATCCGCGGGCGTAAACGCTTCGAGATGTTCCGGGAGCTGAATGAGGCCTTAGAGTTAAAGGATGCCCATGCTACAGAGGAGTCTGGAGACAGCAGGGCTCACTCCAGCTACCTGAAGACCAAGAAGGGCCAGTCTACTTCCCGCCATAAAAAAACAATGGTCAAGAAAGTGGGGCCTGACTCAGACTGACTGCCTCTGCATCCCGTCCCCATCACCAGCCTCCCCCTCTCCTTGCTGTCTTATGACTTCAGGGCTGAGACACAATCCCAGATTCCACTCANACTGACTGCCTCTGCATCCCGTCCCCATCACCAGCCTCCCCNNCTCCTTGCTGTCTTATGACTTCAGGGNTGAGACANAATCCNAGATCCA"
-
-aa3 =
-  "CGTGCTTTCCACGACGGTGACACGCTTCCCTGGATTGGCCAGACTGCCTTCCGGGTCACTGCCATGGAGGAGCCGCAGTCAGATCCTAGCGTCGAGCCCCCTCTGAGTCAGGAAA" --CATTTTCAGACCTATGGAAACTACTTCCTGAAAACAACGTTCTGTCCCCCTTGCCGTCCCAAGCAATGGATGATTTGATGCTGTCCCCGGACGATATTGAACAATGGTTCACTGAAGACCCAGGTCCAGATGAAGCTCCCAGAATGCCAGAGGCTGCTCCCCGCGTGGCCCCTGCACCAGCAGCTCCTACACCGGCGGCCCCTGCACCAGCCCCCTCCTGGCCCCTGTCATCTTCTGTCCCTTCCCAGAAAACCTACCAGGGCAGCTACGGTTTCCGTCTGGGCTTCTTGCATTCTGGGACAGCCAAGTCTGTGACTTGCACGTACTCCCCTGCCCTCAACAAGATGTTTTGCCAACTGGCCAAGACCTGCCCTGTGCAGCTGTGGGTTGATTCCACACCCCCGCCCGGCACCCGCGTCCGCGCCATGGCCATCTACAAGCAGTCACAGCACATGACGGAGGTTGTGAGGCGCTGCCCCCACCATGAGCGCTGCTCAGATAGCGATGGTCTGGCCCCTCCTCAGCATCTTATCCGAGTGGAAGGAAATTTGCGTGTGGAGTATTTGGATGACAGAAACACTTTTCGACATAGTGTGGTGGTGCCCTATGAGCCGCCTGAGGTTGGCTCTGACTGTACCACCATCCACTACAACTACATGTGTAACAGTTCCTGCATGGGCGGCATGAACCGGAGGCCCATCCTCACCATCATCACACTGGAAGACTCCAGTGGTAATCTACTGGGACGGAACAGCTTTGAGGTGCATGTTTGTGCCTGTCCTGGGAGAGACCGGCGCACAGAGGAAGAGAATCTCCGCAAGAAAGGGGAGCCTCACCACGAGCTGCCCCCAGGGAGCACTAAGCGAGCACTGTCCAACAACACCAGCTCCTCTCCCCAGCCAAAGAAGAAACCACTGGATGGAGAATATTTCACCCTTCAGATCCGTGGGCGTGAGCGCTTCGAGATGTTCCGAGAGCTGAATGAGGCCTTGGAACTCAAGGATGCCCAGGCTGGGAAGGAGCCAGGGGGGAGCAGGGCTCACTCCAGCCACCTGAAGTCCAAAAAGGGTCAGTCTACCTCCCGCCATAAAAAACTCATGTTCAAGACAGAAGGGCCTGACTCAGACTGACATTCTCCACTTCTTGTTCCCCACTGACAGCCTCCCACCCCCATCTCTCCCTCCCCTGCCATTTTGGGTTTTGGGTCTTTGAACCCTTGCTTGCAATAGGTGTGCGTCAGAAGCACCCAGGACTTCCATTTGCTTTGTCCCGGGGCTCCACTGAACAAGTTGGCCTGCACTGGTGTTTTGTTGTGGGGAGGAGGATGGGGAGTAGGACATACCAGCTTAGATTTTAAGGTTTTTACTGTGAGGGATGTTTGGGAGATGTAAGAAATGTTCTTGCAGTTAAGGGTTAGTTTACAATCAGCCACATTCTAGGTAGGGGCCCACTTCACCGTACTAACCAGGGAAGCTGTCCCTCACTGTTGAATTTTCTCTAACTTCAAGGCCCATATCTGTGAAATGCTGGCATTTGCACCTACCTCACAGAGTGCATTGTGAGGGTTAATGAAATAATGTACATCTGGCCTTGAAACCACCTTTTATTACATGGGGTCTAGAACTTGACCCCCTTGAGGGTGCTTGTTCCCTCTCCCTGTTGGTCGGTGGGTTGGTAGTTTCTACAGTTGGGCAGCTGGTTAGGTAGAGGGAGTTGTCAAGTCTCTGCTGGCCCAGCCAAACCCTGTCTGACAACCTCTTGGTGAACCTTAGTACCTAAAAGGAAATCTCACCCCATCCCACACCCTGGAGGATTTCATCTCTTGTATATGATGATCTGGATCCACCAAGACTTGTTTTATGCTCAGGGTCAATTTCTTTTTTCTTTTTTTTTTTTTTTTTCTTTTTCTTTGAGACTGGGTCTCGCTTTGTTGCCCAGGCTGGAGTGGAGTGGCGTGATCTTGGCTTACTGCAGCCTTTGCCTCCCCGGCTCGAGCAGTCCTGCCTCAGCCTCCGGAGTAGCTGGGACCACAGGTTCATGCCACCATGGCCAGCCAACTTTTGCATGTTTTGTAGAGATGGGGTCTCACAGTGTTGCCCAGGCTGGTCTCAAACTCCTGGGCTCAGGCGATCCACCTGTCTCAGCCTCCCAGAGTGCTGGGATTACAATTGTGAGCCACCACGTCCAGCTGGAAGGGTCAACATCTTTTACATTCTGCAAGCACATCTGCATTTTCACCCCACCCTTCCCCTCCTTCTCCCTTTTTATATCCCATTTTTATATCGATCTCTTATTTTACAATAAAACTTTGCTGCCAAAAAAAAAAAAAAAAAAAA"
-
-mkSeq aa = Seq (length aa) aa []
-
-start = [mkSeq aa1, mkSeq aa2, mkSeq aa3]
+  return $ Seq (len sq) (aa sq) newS (seedGapMean sq)
