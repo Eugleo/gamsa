@@ -1,7 +1,7 @@
 module Main where
 
 import           Input
-import           Lib
+import           MultipleSeqAlignment
 
 main :: IO ()
 main = runIO inp >>= print

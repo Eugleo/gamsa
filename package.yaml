@@ -21,11 +21,9 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- random-fu
 - containers
 - vector
-- vector-algorithms
-- random-fu
-- mtl
 
 library:
   source-dirs: src
@@ -43,6 +41,7 @@ executables:
     - -Wincomplete-record-updates
     - -Wincomplete-uni-patterns
     - -Wredundant-constraints
+    - -O2
     dependencies:
     - msa
 
