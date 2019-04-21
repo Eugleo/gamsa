@@ -3,14 +3,13 @@ module Input where
 import           Data.List            (groupBy)
 import           Data.Vector          (fromList)
 import           Model                (Alignment (..), Protein (..))
-import           MultipleSeqAlignment (scoreAlignment)
+import           MultipleSeqAlignment (scoreProteins)
 
 mkAl :: [String] -> Alignment
-mkAl input = Alignment seqs (scoreAlignment seqs)
+mkAl input = Alignment seqs (scoreProteins seqs)
   where
     seqs = map mkSeq input
     mkSeq str = Protein (aa str) (gps str) (1 / seed)
-    seed :: Double
     seed =
       if denominator == 0
         then 1
@@ -23,11 +22,13 @@ mkAl input = Alignment seqs (scoreAlignment seqs)
     go i acc (x:xs) =
       go
         (i + 1)
-        (if isGap (head x)
+        (if isGap (head x) && not (null xs)
            then (i, length x) : acc
            else acc)
         xs
     go _ acc [] = acc
+
+simpl = mkAl ["KMMEE", "PE--E", "---MM"]
 
 inp = mkAl [aa1, aa2, aa3, aa4, aa5, aa6, aa7, aa8, aa9, aa10]
 
