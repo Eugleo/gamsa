@@ -1,8 +1,16 @@
 module Blosum
   ( blosum62
+  , fstGap
+  , anotherGap
   ) where
 
 import           Data.Map (Map, fromList)
+
+fstGap :: Int
+fstGap = -4
+
+anotherGap :: Int
+anotherGap = -1
 
 blosum62 :: Map (Char, Char) Int
 blosum62 = fromList $ table ++ [((b, a), c) | ((a, b), c) <- table, a /= b]
