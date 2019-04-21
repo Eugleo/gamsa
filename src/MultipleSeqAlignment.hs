@@ -10,7 +10,7 @@ import           Data.Vector   (toList)
 import           Debug.Trace   (traceShow)
 import           Model         (Alignment (..), Generation, Protein (..),
                                 State (..))
-import           Scoring       (score)
+import           Scoring       (scorePair)
 
 exponential :: Double -> RVar Double
 exponential lambda = do
@@ -50,7 +50,7 @@ run :: Alignment -> RVar Alignment
 run a = do
   let state = S (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0)
   startingG <- populate state a
-  fin <- doRuns state startingG 2000
+  fin <- doRuns state startingG 10000
   return $ maximum fin
 
 maximumOn :: Ord b => (a -> b) -> [a] -> a
@@ -91,8 +91,9 @@ tournament g = do
   indices <- replicateM 5 $ getRandomR (0, length g - 1)
   return $ maximumBy (compare `on` Down) $ (g !!) <$> indices
 
-scoreAlignment :: [Protein] -> Int
-scoreAlignment al = sum [score a b | a <- al, b <- al, a > b]
+-- TODO: Implement better safety measures than simple <
+scoreProteins :: [Protein] -> Int
+scoreProteins al = sum [scorePair a b | a <- al, b <- al, a > b]
 
 -- TODO: Implement 1.2 mutation probability
 mutate :: State -> Alignment -> RVar (Alignment, State)
@@ -108,7 +109,7 @@ mutate st@(S a b c d e) al@Alignment {aProteins = seqs, aScore = oldScore} = do
       let s = seqs !! seqIndex
       newS <- foldM (\acc o -> o acc) s op
       let newSequences = updateAt seqIndex [newS] seqs
-      let newScore = scoreAlignment newSequences
+      let newScore = scoreProteins newSequences
       let newSt = go st sts opIndices (newScore - oldScore)
       return (Alignment newSequences newScore, newSt)
     else return (al, st)
