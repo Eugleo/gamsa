@@ -21,16 +21,18 @@ mkAl input = Alignment seqs (scoreProteins seqs)
     isGap = (==) '-'
     go i acc (x:xs) =
       go
-        (i + 1)
+        (if isGap (head x)
+           then i
+           else i + 1)
         (if isGap (head x) && not (null xs)
            then (i, length x) : acc
            else acc)
         xs
     go _ acc [] = acc
 
-simpl = mkAl ["KMMEE", "PE--E", "---MM"]
+simpl = mkAl ["KMMEE", "----MM"]
 
-inp = mkAl [aa1, aa2, aa3, aa4, aa5, aa6, aa7, aa8, aa9, aa10]
+inp = mkAl [aa1, aa2, aa3, aa4]
 
 aa1 =
   "MASKRIPLVAGNWKMNFDHLEATYFVQKLVWLLRDAHFDFKRCEVALFPSFTSLRSVQVLVE-ADKLHVAYGAQSVSVTTQGAFTGDVSADMIAHLGCSYVIVGHSERRKYHPEDDANIVDQVRAVLAAGMQPILCVGESFEERRQGIELDFAVGQVRDVTRDLNEEQAAKLIVAYEPVWAIGTGMVATPQSAQDAANAIRNDLKTTFGTKVSDSVRILYGGSVTSKNAAELISQPDVDGFLIGGAALDVEELAKIARLALKSTKSRN"
