@@ -9,7 +9,6 @@ import qualified Data.Map.Strict       as Map (lookup)
 import           Data.Maybe            (fromMaybe)
 import           Data.Vector           (Vector, slice)
 import qualified Data.Vector           as V (zip)
-import           Debug.Trace           (traceShow)
 import           Genetics.ScoringTable (anotherGap, blosum62, fstGap)
 import           Model                 (Gap, Protein (..))
 

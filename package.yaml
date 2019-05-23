@@ -24,6 +24,7 @@ dependencies:
 - random-fu
 - containers
 - vector
+- hspec
 
 library:
   source-dirs: src
