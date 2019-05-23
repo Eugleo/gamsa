@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiWayIf #-}
+
 module MultipleSeqAlignment where
 
 import           Control.Monad (foldM, mapM_, replicateM)
@@ -54,7 +56,7 @@ fill' n Protein {pSeq = aa, pGaps = gaps} =
 
 run :: Alignment -> RVar Alignment
 run a = do
-  let state = S (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0)
+  let state = S (0.3, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.1, 0, 0) (0.2, 0, 0)
   startingG <- populate state a
   fin <- doRuns state startingG 100000
   return $ maximum fin
@@ -91,7 +93,11 @@ nextGen st g = do
     go s 0 acc = return (acc, s)
     go s n acc = do
       best <- tournament' g
-      more5 <- mapM (mutate s) best
+      coin <- stdUniform
+      more5 <-
+        if coin
+          then mapM (mutate s) best
+          else return $ map (\a -> (a, s)) best
       go s (n - 1) (map fst more5 ++ acc) -- get new state
 
 top5 :: Generation -> [Alignment]
@@ -99,17 +105,18 @@ top5 gen = take 5 tops
   where
     tops = sortBy (compare `on` Down) gen
 
-tournament :: Generation -> RVar Alignment
-tournament g = do
-  indices <- replicateM 5 $ getRandomR (0, 99)
-  return $ maximum $ (g !!) <$> indices
-
 tournament' :: Generation -> RVar [Alignment]
 tournament' g = do
   indices <- replicateM 5 $ getRandomR (0, 99)
   let contenders = (g !!) <$> indices
   let first = maximum contenders
-  mapM (recombineH first) contenders
+  coin <- stdUniform :: RVar Float
+  if | coin `between` (0, 0.3) -> mapM (recombineH first) contenders
+     | coin `between` (0.3, 0.8) -> mapM (recombineV first) contenders
+     | otherwise -> return contenders
+
+between :: Ord a => a -> (a, a) -> Bool
+between x (l, r) = (l <= x) && (x <= r)
 
 recombineH :: Alignment -> Alignment -> RVar Alignment
 recombineH a@Alignment {aProteins = protA} Alignment {aProteins = protB}
@@ -124,28 +131,49 @@ recombineH a@Alignment {aProteins = protA} Alignment {aProteins = protB}
         then return a
         else return $ Protein (pSeq a) gapsB (pMeanGapCount a)
 
+recombineV :: Alignment -> Alignment -> RVar Alignment
+recombineV a@Alignment {aProteins = protA} Alignment {aProteins = protB} = do
+  i <- breakpoint
+  newProt <- mapM (recombineProt i) (zip protA protB)
+  return $ Alignment newProt (aScore a)
+  where
+    seqLength s = length (pSeq s) -- + foldr (\g acc -> snd g + acc) 0 (pGaps s)
+    minLength = minimum $ map seqLength protA
+    breakpoint = getRandomR (1, minLength - 1)
+    recombineProt i (p1, p2) = do
+      let (g1A, g2A) = splitGaps i (sortOn fst $ pGaps p1)
+      let (g1B, g2B) = splitGaps i (sortOn fst $ pGaps p2)
+      coin <- stdUniform
+      if coin
+        then return $ Protein (pSeq p1) (g1A ++ g2B) (pMeanGapCount p1)
+        else return $ Protein (pSeq p1) (g1B ++ g2A) (pMeanGapCount p1)
+
+splitGaps :: Int -> [Gap] -> ([Gap], [Gap])
+splitGaps i = helper []
+  where
+    helper acc [] = (acc, [])
+    helper acc (g@(ga, _):gs)
+      | ga < i = helper (g : acc) gs
+      | otherwise = (acc, gs)
+
 -- TODO: Implement better safety measures than simple <
 scoreProteins :: [Protein] -> Int
-scoreProteins al = sum [scorePair a b | a <- al, b <- al, a > b]
+scoreProteins al = sum [scorePair a b | a <- al, b <- al, a /= b]
 
 -- TODO: Implement 1.2 mutation probability
 mutate :: State -> Alignment -> RVar (Alignment, State)
-mutate st@(S a b c d e) al@Alignment {aProteins = seqs, aScore = oldScore} = do
-  check <- getRandomR (1, 100)
-  if check >= 2
-    then do
-      p <- replicateM 1 stdUniform
-      let opIndices = map (pick st) p
-      let op = (ops !!) <$> opIndices
-      let sts = (ps !!) <$> opIndices
-      seqIndex <- getRandomR (0, length seqs - 1)
-      let s = seqs !! seqIndex
-      newS <- foldM (\acc o -> o acc) s op
-      let newSequences = updateAt seqIndex [newS] seqs
-      let newScore = scoreProteins newSequences
-      let newSt = go st sts opIndices (newScore - oldScore)
-      return (Alignment newSequences newScore, newSt)
-    else return (al, st)
+mutate st@(S a b c d e) Alignment {aProteins = seqs, aScore = oldScore} = do
+  p <- replicateM 1 stdUniform
+  let opIndices = map (pick st) p
+  let op = (ops !!) <$> opIndices
+  let sts = (ps !!) <$> opIndices
+  seqIndex <- getRandomR (0, length seqs - 1)
+  let s = seqs !! seqIndex
+  newS <- foldM (\acc o -> o acc) s op
+  let newSequences = updateAt seqIndex [newS] seqs
+  let newScore = scoreProteins newSequences
+  let newSt = go st sts opIndices (newScore - oldScore)
+  return (Alignment newSequences newScore, newSt)
   where
     ops = [insert, increase, decrease, delete, shift]
     ps = [a, b, c, d, e]
@@ -235,7 +263,7 @@ shift sq = do
            (pSeq sq)
            ((i, gl) : filter ((/=) gs . fst) nms)
            (pMeanGapCount sq)
-    else let [(hs, hl)] = traceShow ms ms
+    else let [(hs, hl)] = ms
           in return $
              Protein
                (pSeq sq)
