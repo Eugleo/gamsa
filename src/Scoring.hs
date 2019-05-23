@@ -26,25 +26,27 @@ scorePair Protein {pSeq = s1, pGaps = g1} Protein {pSeq = s2, pGaps = g2} =
     helper _ []            = []
     helper n ((gi, gl):gs) = (gi + n, gl) : helper (n + gl) gs
     label l = map (, l)
+    minLength = min (length s1 + gapLength g1) (length s2 + gapLength g2)
+    gapLength = sum . map snd
     go :: Int -> Int -> Int -> Int -> [(Gap, ProteinID)] -> Int
-    go i adjA adjB acc [] =
-      let sliceLength = minLength - i
-          minLength = min (length s1 - adjA) (length s2 - adjB)
-       in acc + scoreProteinSlice (i + adjA) (i + adjB) sliceLength s1 s2
-    go i adjA adjB acc ((g@(gi, gl), name):gs) =
-      let iA = i + adjA
-          iB = i + adjB
-          (newA, newB) =
-            if name == A
-              then (adjA - gl, adjB)
-              else (adjA, adjB - gl)
-          gapCost = scoreGap g
-          minLength = min (length s1 - adjA) (length s2 - adjB)
-          newIndex = max i (gi + gl)
-          scoreBeforeGap = scoreProteinSlice iA iB (min gi minLength - i) s1 s2
-       in if i > minLength
-            then acc + gapCost
-            else go newIndex newA newB (acc + gapCost + scoreBeforeGap) gs
+    -- No gaps left, score the rest of the sequences
+    go i a b acc [] =
+      acc + scoreProteinSlice (i + a) (i + b) (minLength - i) s1 s2
+    -- There's a gap g remaining
+    go i a b acc ((g@(gi, gl), pID):gs)
+      -- We're beyond the end of the shorter sequence
+      -- That means we can now score the remaining gaps, which are all in the longer seq
+      | i >= minLength =
+        foldr (\(gp, _) part -> part + scoreGap gp) (acc + scoreGap g) gs
+      | otherwise =
+        let (newA, newB) =
+              if pID == A
+                then (a - gl, b)
+                else (a, b - gl)
+            newIndex = max i (gi + gl)
+            scoreBeforeGap =
+              scoreProteinSlice (i + a) (i + b) (min gi minLength - i) s1 s2
+         in go newIndex newA newB (acc + scoreGap g + scoreBeforeGap) gs
 
 scoreProteinSlice :: Int -> Int -> Int -> Vector Char -> Vector Char -> Int
 scoreProteinSlice i1 i2 len s1 s2
