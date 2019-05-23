@@ -48,7 +48,11 @@ recombineV' i (Protein {pSeq = seq, pGaps = gaps1, pMeanGapCount = mgc}, Protein
   let (g1, g2) = partition ((> i) . fst) gaps1
   let (h1, h2) = partition ((> i) . fst) gaps2
   coin <- stdUniform
-  if coin
-    -- oba proteiny mají stejné hodnoty pSeq i pMeanGapCount, liší se pouze v mezerách
-    then return $ Protein seq (g1 ++ h2) mgc
-    else return $ Protein seq (h1 ++ g2) mgc
+  -- oba proteiny mají stejné hodnoty pSeq i pMeanGapCount, liší se pouze v mezerách
+  return $
+    Protein
+      seq
+      (if coin
+         then g1 ++ h2
+         else h1 ++ g2)
+      mgc
