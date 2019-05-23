@@ -4,20 +4,20 @@ module MultipleSeqAlignment
   ( run
   ) where
 
-import           Control.Monad                        (replicateM)
-import           Data.Function                        (on)
-import           Data.List                            (sortBy)
-import           Data.Ord                             (Down (..))
-import           Data.Random                          (RVar, stdUniform,
-                                                       uniform)
-import           Data.Random.Distribution.Exponential (exponential)
-import           Debug.Trace                          (traceShow)
-import           Genetics.Crossover                   (recombineH, recombineV)
-import           Genetics.Mutation
-import           Model                                (Alignment (..),
-                                                       Generation)
-import           MutationProbabilities
-import           Utils                                (between)
+import Control.Monad                        (replicateM)
+
+import Data.Function                        (on)
+import Data.List                            (sortBy)
+import Data.Ord                             (Down (..))
+import Data.Random                          (RVar, stdUniform, uniform)
+import Data.Random.Distribution.Exponential (exponential)
+import Debug.Trace                          (traceShow)
+
+import Genetics.Crossover                   (recombineH, recombineV)
+import Genetics.Mutation
+import Model                                (Alignment (..), Generation)
+import MutationProbabilities
+import Utils                                (between)
 
 run :: Alignment -> RVar Alignment
 run a = do

@@ -5,7 +5,7 @@ module Model
   , Gap
   ) where
 
-import           Data.Vector (Vector)
+import Data.Vector (Vector)
 
 type Generation = [Alignment]
 

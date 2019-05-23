@@ -4,7 +4,7 @@ module Genetics.ScoringTable
   , anotherGap
   ) where
 
-import           Data.Map (Map, fromList)
+import Data.Map (Map, fromList)
 
 fstGap :: Int
 fstGap = -4

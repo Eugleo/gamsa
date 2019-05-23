@@ -1,11 +1,12 @@
 module Main where
 
-import           Control.Monad        (mapM_)
-import           Data.Random          (StdRandom (..), runRVar)
-import           Model                (Alignment (..))
-import           MultipleSeqAlignment (run)
-import           System.Environment
-import           Utils                (fill, mkAlignment)
+import Control.Monad        (mapM_)
+import Data.Random          (StdRandom (..), runRVar)
+import System.Environment
+
+import Model                (Alignment (..))
+import MultipleSeqAlignment (run)
+import Utils                (fill, mkAlignment)
 
 main :: IO ()
 main = do

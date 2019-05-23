@@ -3,10 +3,11 @@ module Genetics.Crossover
   , recombineH
   ) where
 
-import           Data.List        (sortOn)
-import           Data.Random      (RVar, stdUniform, uniform)
-import           Genetics.Scoring (scoreProteins)
-import           Model            (Alignment (..), Gap, Protein (..))
+import Data.List        (sortOn)
+import Data.Random      (RVar, stdUniform, uniform)
+
+import Genetics.Scoring (scoreProteins)
+import Model            (Alignment (..), Gap, Protein (..))
 
 recombineH :: Alignment -> Alignment -> RVar Alignment
 recombineH a@Alignment {aProteins = protA} Alignment {aProteins = protB}

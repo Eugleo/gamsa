@@ -5,10 +5,11 @@ module Utils
   , mkAlignment
   ) where
 
-import           Data.List        (groupBy, maximumBy, sortOn)
-import           Data.Vector      (fromList, toList)
-import           Genetics.Scoring (scoreProteins)
-import           Model            (Alignment (..), Protein (..))
+import Data.List        (groupBy, maximumBy, sortOn)
+import Data.Vector      (fromList, toList)
+
+import Genetics.Scoring (scoreProteins)
+import Model            (Alignment (..), Protein (..))
 
 maximumOn :: Ord b => (a -> b) -> [a] -> a
 maximumOn f = maximumBy (\a b -> compare (f a) (f b))

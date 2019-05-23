@@ -1,8 +1,9 @@
-import           Data.Random          (StdRandom (..), runRVar)
-import           Model
-import           MultipleSeqAlignment (run)
-import           Test.Hspec
-import           Utils                (mkAlignment)
+import Data.Random          (StdRandom (..), runRVar)
+import Test.Hspec
+
+import Model
+import MultipleSeqAlignment (run)
+import Utils                (mkAlignment)
 
 testAl = mkAlignment ["KMMEEAABBGHGHI", "-MMABGHI", "EAABB-H-HI"]
 
