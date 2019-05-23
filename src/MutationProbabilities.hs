@@ -4,7 +4,7 @@ module MutationProbabilities
   ( nextGenProbabilities
   , Probabilities(..)
   , Stats(..)
-  , Mutations
+  , MutationState
   , pick
   ) where
 
@@ -14,7 +14,7 @@ import Utils (between)
 -- sbírány statistiky o průběhu různých druhů mutací, které jsou dále využívány k dynamickému
 -- přizpůsobování toho, s jakou pravděpodobností bude vybrán konkrétní druh mutace (ciz níže).
 -- Tyto pravděpodobnosti se mění pouze napříč populacemi, v rámci jedné generace jsou konstantní.
-type Mutations = (Probabilities, Stats)
+type MutationState = (Probabilities, Stats)
 
 -- | Pravděpodobnosti mutačních operacích, jejich součet by měl vždy být 1.0
 data Probabilities = P
@@ -40,7 +40,7 @@ data Stats = S
 -- a na základě nich spočítá nové hodnoty pravděpodobností jendotlivých operací.
 -- Jsou používány komlikované vzorce z originálního paperu (DOI: 10.1155/2009/963150),
 -- víceméně se jedná o to, že operace s pozitivním dopadem budou mít vyšší pravděpodobnost.
-nextGenProbabilities :: Mutations -> Probabilities
+nextGenProbabilities :: MutationState -> Probabilities
 nextGenProbabilities (P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) =
   let fin = map (/ newProbSum) newProbList -- chceme, aby finální pravděpodobnosti měly součet 1.0
    in P (fin !! 0) (fin !! 1) (fin !! 2) (fin !! 3) (fin !! 4)
