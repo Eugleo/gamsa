@@ -8,7 +8,7 @@ import           Data.Random   (RVar, StdRandom (..), runRVar, stdUniform,
                                 uniform)
 import           Data.Vector   (toList)
 import           Debug.Trace   (traceShow)
-import           Model         (Alignment (..), Generation, Protein (..),
+import           Model         (Alignment (..), Gap, Generation, Protein (..),
                                 State (..))
 import           Scoring       (scorePair)
 
@@ -25,6 +25,12 @@ getRandomR (a, b) = uniform a b
 runIO :: Alignment -> IO Alignment
 runIO a = do
   result <- runRVar (run a) StdRandom
+  mapM_ putStrLn . fill . aProteins $ result
+  return result
+
+testrecomb :: Alignment -> Alignment -> IO Alignment
+testrecomb a b = do
+  result <- runRVar (recombineV a b) StdRandom
   mapM_ putStrLn . fill . aProteins $ result
   return result
 
@@ -50,7 +56,7 @@ run :: Alignment -> RVar Alignment
 run a = do
   let state = S (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.2, 0, 0)
   startingG <- populate state a
-  fin <- doRuns state startingG 10000
+  fin <- doRuns state startingG 100000
   return $ maximum fin
 
 maximumOn :: Ord b => (a -> b) -> [a] -> a
@@ -65,31 +71,58 @@ populate st a = go 100 []
 doRuns :: State -> Generation -> Int -> RVar Generation
 doRuns _ g 0 = return g
 doRuns st g n =
-  traceShow
-    ("Remaining runs: " ++ show n)
-    (nextGen st g >>= \(ng, ns) -> doRuns ns ng (n - 1))
+  if n `mod` 100 == 0
+    then traceShow
+           ( "Remaining runs: " ++ show n
+           , (map aScore (take 3 tops), map aScore (drop 97 tops)))
+           (nextGen st g >>= \(ng, ns) -> doRuns st ng (n - 1))
+    else nextGen st g >>= \(ng, ns) -> doRuns st ng (n - 1)
+  where
+    tops = sortBy (compare `on` Down) g
 
 -- TODO: Find out if we should mutate the top5 as well
 nextGen :: State -> Generation -> RVar (Generation, State)
 nextGen st g = do
   let top = top5 g
-  (als, ns) <- go st 95 []
-  return (als ++ top, newState ns)
+  (als, ns) <- go st 19 []
+  return (top ++ als, newState ns) -- newState ns
   where
     go :: State -> Int -> [Alignment] -> RVar (Generation, State)
     go s 0 acc = return (acc, s)
     go s n acc = do
-      best <- tournament g
-      (ng, ns) <- mutate s best
-      go ns (n - 1) (ng : acc)
+      best <- tournament' g
+      more5 <- mapM (mutate s) best
+      go s (n - 1) (map fst more5 ++ acc) -- get new state
 
 top5 :: Generation -> [Alignment]
-top5 = take 5 . sortBy (compare `on` Down)
+top5 gen = take 5 tops
+  where
+    tops = sortBy (compare `on` Down) gen
 
 tournament :: Generation -> RVar Alignment
 tournament g = do
-  indices <- replicateM 5 $ getRandomR (0, length g - 1)
-  return $ maximumBy (compare `on` Down) $ (g !!) <$> indices
+  indices <- replicateM 5 $ getRandomR (0, 99)
+  return $ maximum $ (g !!) <$> indices
+
+tournament' :: Generation -> RVar [Alignment]
+tournament' g = do
+  indices <- replicateM 5 $ getRandomR (0, 99)
+  let contenders = (g !!) <$> indices
+  let first = maximum contenders
+  mapM (recombineH first) contenders
+
+recombineH :: Alignment -> Alignment -> RVar Alignment
+recombineH a@Alignment {aProteins = protA} Alignment {aProteins = protB}
+  | protA == protB = return a
+  | otherwise = do
+    newProt <- mapM recombineProt (zip protA protB)
+    return $ Alignment newProt (aScore a)
+  where
+    recombineProt (a, Protein {pGaps = gapsB}) = do
+      coin <- stdUniform
+      if coin
+        then return a
+        else return $ Protein (pSeq a) gapsB (pMeanGapCount a)
 
 -- TODO: Implement better safety measures than simple <
 scoreProteins :: [Protein] -> Int
@@ -98,7 +131,7 @@ scoreProteins al = sum [scorePair a b | a <- al, b <- al, a > b]
 -- TODO: Implement 1.2 mutation probability
 mutate :: State -> Alignment -> RVar (Alignment, State)
 mutate st@(S a b c d e) al@Alignment {aProteins = seqs, aScore = oldScore} = do
-  check <- getRandomR (1, 10)
+  check <- getRandomR (1, 100)
   if check >= 2
     then do
       p <- replicateM 1 stdUniform
@@ -202,7 +235,7 @@ shift sq = do
            (pSeq sq)
            ((i, gl) : filter ((/=) gs . fst) nms)
            (pMeanGapCount sq)
-    else let [(hs, hl)] = ms
+    else let [(hs, hl)] = traceShow ms ms
           in return $
              Protein
                (pSeq sq)
