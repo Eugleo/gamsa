@@ -1,17 +1,17 @@
 {-# LANGUAGE TupleSections #-}
 
-module Scoring
+module Genetics.Scoring
   ( scoreProteins
   ) where
 
-import           Blosum          (anotherGap, blosum62, fstGap)
-import           Data.List       (sortOn, tails)
-import qualified Data.Map.Strict as Map (lookup)
-import           Data.Maybe      (fromMaybe)
-import           Data.Vector     (Vector, slice)
-import qualified Data.Vector     as V (zip)
-import           Debug.Trace     (traceShow)
-import           Model           (Gap, Protein (..))
+import           Data.List             (sortOn, tails)
+import qualified Data.Map.Strict       as Map (lookup)
+import           Data.Maybe            (fromMaybe)
+import           Data.Vector           (Vector, slice)
+import qualified Data.Vector           as V (zip)
+import           Debug.Trace           (traceShow)
+import           Genetics.ScoringTable (anotherGap, blosum62, fstGap)
+import           Model                 (Gap, Protein (..))
 
 data ProteinID
   = A

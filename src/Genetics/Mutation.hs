@@ -1,4 +1,4 @@
-module Mutation
+module Genetics.Mutation
   ( mutate
   ) where
 
@@ -7,9 +7,9 @@ import           Data.List                            (partition)
 import           Data.Random                          (RVar, stdUniform,
                                                        uniform)
 import           Data.Random.Distribution.Exponential (exponential)
+import           Genetics.Scoring                     (scoreProteins)
 import           Model
 import           MutationProbabilities
-import           Scoring                              (scoreProteins)
 
 mutate :: State -> Alignment -> RVar (Alignment, State)
 mutate st@(S a b c d e) Alignment {aProteins = seqs, aScore = oldScore} = do

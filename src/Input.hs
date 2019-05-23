@@ -1,9 +1,9 @@
 module Input where
 
-import           Data.List   (groupBy)
-import           Data.Vector (fromList)
-import           Model       (Alignment (..), Protein (..))
-import           Scoring     (scoreProteins)
+import           Data.List        (groupBy)
+import           Data.Vector      (fromList)
+import           Genetics.Scoring (scoreProteins)
+import           Model            (Alignment (..), Protein (..))
 
 mkAl :: [String] -> Alignment
 mkAl input = Alignment seqs (scoreProteins seqs)

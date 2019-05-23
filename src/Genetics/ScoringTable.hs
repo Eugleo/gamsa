@@ -1,4 +1,4 @@
-module Blosum
+module Genetics.ScoringTable
   ( blosum62
   , fstGap
   , anotherGap
