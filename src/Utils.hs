@@ -3,9 +3,12 @@ module Utils
   , between
   , fill
   , mkAlignment
+  , choose
+  , updateAt
   ) where
 
 import Data.List        (groupBy, maximumBy, sortOn)
+import Data.Random      (RVar, uniform)
 import Data.Vector      (fromList, toList)
 
 import Genetics.Scoring (scoreProteins)
@@ -59,3 +62,11 @@ mkAlignment input = Alignment seqs (scoreProteins seqs)
            else acc)
         xs
     go _ acc [] = acc
+
+choose :: [a] -> RVar (Int, a)
+choose xs = do
+  index <- uniform 0 (length xs - 1)
+  return (index, xs !! index)
+
+updateAt :: Int -> [a] -> [a] -> [a]
+updateAt i new xs = take i xs ++ (new ++ drop (i + 1) xs)

@@ -1,86 +1,93 @@
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE MultiWayIf     #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module MultipleSeqAlignment
   ( run
+  , defaultConfig
   ) where
 
-import Control.Monad                        (replicateM)
+import Control.Monad                  (replicateM)
+import Control.Monad.Trans.Class      (lift)
+import Control.Monad.Trans.State.Lazy (StateT (..), evalStateT, get, put)
+import Data.Function                  (on)
+import Data.List                      (sortBy)
+import Data.Ord                       (Down (..))
+import Data.Random                    (RVar, stdUniform)
+import Debug.Trace                    (traceShow)
 
-import Data.Function                        (on)
-import Data.List                            (sortBy)
-import Data.Ord                             (Down (..))
-import Data.Random                          (RVar, stdUniform, uniform)
-import Data.Random.Distribution.Exponential (exponential)
-import Debug.Trace                          (traceShow)
+import Genetics.Crossover             (recombineH, recombineV)
+import Genetics.Mutation              (mutate)
+import Model                          (Alignment (..), Generation)
+import MutationProbabilities          (MutationState, Probabilities (..),
+                                       Stats (..))
+import Utils                          (between, choose)
 
-import Genetics.Crossover                   (recombineH, recombineV)
-import Genetics.Mutation
-import Model                                (Alignment (..), Generation)
-import MutationProbabilities
-import Utils                                (between)
+data Config = Config
+  { generationCount       :: Int
+  , startingProbabilities :: Probabilities
+  , tournamentSize        :: Int
+  , tournamentCount       :: Int
+  , eliteCount            :: Int
+  }
 
-run :: Alignment -> RVar Alignment
-run a = do
-  let state = S (0.3, 0, 0) (0.2, 0, 0) (0.2, 0, 0) (0.1, 0, 0) (0.2, 0, 0)
-  startingG <- populate state a
-  fin <- doRuns state startingG 20000
+defaultConfig :: Config
+defaultConfig = Config 2000 (P 0.2 0.2 0.2 0.2 0.2) 3 33 1
+
+run :: Config -> Alignment -> RVar Alignment
+run config@Config { generationCount
+                  , startingProbabilities
+                  , tournamentSize
+                  , tournamentCount
+                  , eliteCount
+                  } al = do
+  let state = (startingProbabilities, S [] [] [] [] [])
+  let populationSize = tournamentSize * tournamentCount + eliteCount
+  generation <- mkPopulation populationSize al state
+  fin <- evalStateT (repeatNGenerations config generation generationCount) state
   return $ maximum fin
 
-populate :: State -> Alignment -> RVar Generation
-populate st a = go 100 []
+mkPopulation :: Int -> Alignment -> MutationState -> RVar Generation
+mkPopulation size al = evalStateT (go size [])
   where
     go 0 acc = return acc
-    go n acc = mutate st a >>= \(na, _) -> go (n - 1) (na : acc)
+    go n acc = do
+      oldState <- get
+      newAl <- mutate al
+      put oldState
+      go (n - 1) (newAl : acc)
 
-doRuns :: State -> Generation -> Int -> RVar Generation
-doRuns _ g 0 = return g
-doRuns st g n =
+repeatNGenerations ::
+     Config -> Generation -> Int -> StateT MutationState RVar Generation
+repeatNGenerations _ g 0 = return g
+repeatNGenerations config g n =
   if n `mod` 100 == 0
     then traceShow
-           ( "Remaining runs: " ++ show n
-           , (map aScore (take 3 tops), map aScore (drop 97 tops)))
+           ("Remaining runs: " ++ show n, map aScore $ take 3 tops)
            result
     else result
   where
-    result = nextGen st g >>= \(ng, ns) -> doRuns st ng (n - 1)
+    result =
+      nextGeneration config g >>= \newGeneration ->
+        repeatNGenerations config newGeneration (n - 1)
     tops = sortBy (compare `on` Down) g
 
--- TODO: Find out if we should mutate the top5 as well
-nextGen :: State -> Generation -> RVar (Generation, State)
-nextGen st g = do
-  let top = top5 g
-  (als, ns) <- go st 19 []
-  return (top ++ als, newState ns) -- newState ns
+nextGeneration :: Config -> Generation -> StateT MutationState RVar Generation
+nextGeneration Config {tournamentSize, tournamentCount, eliteCount} g = do
+  let topN = top eliteCount g
+  alignments <- concat <$> replicateM tournamentCount go
+  return $ topN ++ alignments
   where
-    go :: State -> Int -> [Alignment] -> RVar (Generation, State)
-    go s 0 acc = return (acc, s)
-    go s n acc = do
-      best <- tournament' g
-      k <- exponential (1 / 1.8) :: RVar Float
-      more5 <- mapM (applyNTimes (round k) s mutate) best
-      go s (n - 1) (map fst more5 ++ acc) -- get new state
+    go :: StateT MutationState RVar [Alignment]
+    go = do
+      elite <- lift $ tournament tournamentSize g
+      mapM mutate elite
 
-applyNTimes ::
-     Monad m
-  => Int
-  -> State
-  -> (State -> a -> m (a, State))
-  -> a
-  -> m (a, State)
-applyNTimes 0 st _ a = return (a, st)
-applyNTimes k st f a = do
-  (result, newSt) <- f st a
-  applyNTimes (k - 1) st f result -- zde použít newst
+top :: Int -> Generation -> [Alignment]
+top n = take n . sortBy (compare `on` Down)
 
-top5 :: Generation -> [Alignment]
-top5 gen = take 5 tops
-  where
-    tops = sortBy (compare `on` Down) gen
-
-tournament' :: Generation -> RVar [Alignment]
-tournament' g = do
-  indices <- replicateM 5 $ uniform 0 99
-  let contenders = (g !!) <$> indices
+tournament :: Int -> Generation -> RVar [Alignment]
+tournament size g = do
+  contenders <- fmap (map snd) . replicateM size $ choose g
   let first = maximum contenders
   coin <- stdUniform :: RVar Float
   if | coin `between` (0, 0.3) -> mapM (recombineH first) contenders

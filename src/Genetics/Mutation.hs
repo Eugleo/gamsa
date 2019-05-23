@@ -1,37 +1,66 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Genetics.Mutation
   ( mutate
   ) where
 
-import Control.Monad                        (foldM, replicateM)
+import Control.Monad                        (replicateM)
+import Control.Monad.Trans.Class            (lift)
+import Control.Monad.Trans.State.Lazy       (StateT (..), modify)
 import Data.List                            (partition)
 import Data.Random                          (RVar, stdUniform, uniform)
 import Data.Random.Distribution.Exponential (exponential)
 
 import Genetics.Scoring                     (scoreProteins)
 import Model
-import MutationProbabilities
+import MutationProbabilities                (MutationState, Stats (..), listToS,
+                                             pick)
+import Utils                                (choose, updateAt)
 
-mutate :: State -> Alignment -> RVar (Alignment, State)
-mutate st@(S a b c d e) Alignment {aProteins = seqs, aScore = oldScore} = do
-  p <- replicateM 1 stdUniform
-  let opIndices = map (pick st) p
-  let op = (ops !!) <$> opIndices
-  let sts = (ps !!) <$> opIndices
-  seqIndex <- uniform 0 (length seqs - 1)
-  let s = seqs !! seqIndex
-  newS <- foldM (\acc o -> o acc) s op
-  let newSequences = updateAt seqIndex [newS] seqs
-  let newScore = scoreProteins newSequences
-  let newSt = go st sts opIndices (newScore - oldScore)
-  return (Alignment newSequences newScore, newSt)
+type Mutator = StateT MutationState RVar Alignment
+
+mutate :: Alignment -> Mutator
+mutate al@Alignment {aScore} = do
+  count <- lift (exponential (1 / 1.8) :: RVar Float)
+  (opIndices, newAl) <- applyNTimes (round count) mutate' al
+  let dif = scoreProteins (aProteins newAl) - aScore
+  modify (updateMutationUseCounts opIndices dif)
+  return newAl
+
+updateMutationUseCounts :: [Int] -> Int -> MutationState -> MutationState
+updateMutationUseCounts indices dif (p, S {sis, sic, sdc, sdl, shf}) =
+  ( p
+  , listToS $
+    zipWith (flip (:)) [sis, sic, sdc, sdl, shf] $
+    map
+      (\x -> fromIntegral dif * fromIntegral x / fromIntegral usesTotal)
+      usesVector)
   where
-    ops = [insert, increase, decrease, delete, shift]
-    ps = [a, b, c, d, e]
-    go stt _ [] _ = stt
-    go stt [] _ _ = stt
-    go stt ((prob, tot, d1):muts) (i:is) diff =
-      let s = updateMutation stt (prob, tot, d1 + diff) i
-       in go s muts is diff
+    usesTotal = sum usesVector
+    usesVector =
+      foldr (\i acc -> updateAt i acc [acc !! i + 1]) [0, 0, 0, 0, 0] indices
+
+applyNTimes ::
+     Int
+  -> (Alignment -> StateT MutationState RVar (Int, Alignment))
+  -> Alignment
+  -> StateT MutationState RVar ([Int], Alignment)
+applyNTimes 0 f a = f a >>= \(index, al) -> return ([index], al)
+applyNTimes k f a = do
+  (index, al) <- f a
+  (indices, finalAl) <- applyNTimes (k - 1) f al
+  return (index : indices, finalAl)
+
+mutate' :: Alignment -> StateT MutationState RVar (Int, Alignment)
+mutate' Alignment {aProteins} = do
+  operation <- (operations !!) <$> pick
+  (index, protein) <- lift $ choose aProteins
+  newProtein <- lift $ operation protein
+  let newProteins = updateAt index [newProtein] aProteins
+  let newAl = Alignment newProteins (scoreProteins newProteins)
+  return (index, newAl)
+  where
+    operations = [insert, increase, decrease, delete, shift]
 
 -- TODO: Add pattern matching and simpler updates
 insert :: Protein -> RVar Protein
@@ -62,9 +91,6 @@ decrease sq = do
     else let newS = updateAt i [(start, l - 1)] s
           in return $ Protein (pSeq sq) newS (pMeanGapCount sq)
 
-updateAt :: Int -> [a] -> [a] -> [a]
-updateAt i new xs = take i xs ++ new ++ drop (i + 1) xs
-
 shift :: Protein -> RVar Protein
 shift s@Protein {pGaps = []} = return s
 shift sq = do
@@ -85,11 +111,6 @@ shift sq = do
                (pSeq sq)
                ((hs, gl) : (gs, hl) : filter ((/=) gs . fst) nms)
                (pMeanGapCount sq)
-
-updateMutation :: State -> (Double, Int, Int) -> Int -> State
-updateMutation st (prob, tot, diff) i =
-  let mut = divideState st
-   in createState $ updateAt i [(prob, tot + 1, diff)] mut
 
 delete :: Protein -> RVar Protein
 delete s@Protein {pGaps = []} = return s

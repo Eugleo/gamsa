@@ -6,9 +6,14 @@ module MutationProbabilities
   , Stats(..)
   , MutationState
   , pick
+  , listToS
   ) where
 
-import Utils (between)
+import Control.Monad.Trans.Class      (lift)
+import Control.Monad.Trans.State.Lazy (StateT (..), get)
+import Data.Random                    (RVar, stdUniform)
+
+import Utils                          (between)
 
 -- | Popisuje současný stav mutačních operací. Během běhu generací jsou
 -- sbírány statistiky o průběhu různých druhů mutací, které jsou dále využívány k dynamickému
@@ -29,12 +34,16 @@ data Probabilities = P
 -- A udává, kolikrát byla operace v současné generaci použita ("total")
 -- B je součet rozdílů skóre alignmentu před provedením operace a po ní ("dif")
 data Stats = S
-  { sis :: (Int, Int) -- ^ insert
-  , sic :: (Int, Int) -- ^ increase
-  , sdc :: (Int, Int) -- ^ decrease
-  , sdl :: (Int, Int) -- ^ delete
-  , shf :: (Int, Int) -- ^ shift
+  { sis :: [Double] -- ^ insert
+  , sic :: [Double] -- ^ increase
+  , sdc :: [Double] -- ^ decrease
+  , sdl :: [Double] -- ^ delete
+  , shf :: [Double] -- ^ shift
   }
+
+listToS :: [[Double]] -> Stats
+listToS [a, b, c, d, e] = S a b c d e
+listToS _               = error "Wrong number of list items"
 
 -- | Tato funkce je volána vždy po dokončení jedné generace; zpracuje nasbíraná data
 -- a na základě nich spočítá nové hodnoty pravděpodobností jendotlivých operací.
@@ -47,8 +56,7 @@ nextGenProbabilities (P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) 
   where
     probList = [pis, pic, pdc, pdl, phf] -- se seznamy se lépe pracuje
     statList = [sis, sic, sdc, sdl, shf]
-    mutationsCount = sum . map fst $ statList -- suma přes počet použití všech mutačních operací
-    tDSOs = map (tDSO mutationsCount) statList
+    tDSOs = map sum statList
     normalizedTDSOs = map (/ maximum tDSOs) tDSOs
     newProbList = zipWith (\p t -> p + p * 0.1 * t) probList normalizedTDSOs -- 0.1 je zvolená konstanta
     newProbSum = sum newProbList
@@ -61,10 +69,13 @@ tDSO mutationsCount (total, dif) =
 
 -- | Dostane číslo od 0 do 1 a na základě něj vybere s danou pravděpodobností jednu z mutačních
 -- operací (respektive, vrátí její index, protože k samotné funkci nemá přístup)
-pick :: Probabilities -> Double -> Int
-pick P {pis, pic, pdc, pdl, phf} num = go 0 0 pis [pis, pic, pdc, pdl, phf]
+pick :: StateT MutationState RVar Int
+pick = do
+  (P {pis, pic, pdc, pdl, phf}, _) <- get
+  num <- lift stdUniform
+  return $ go num 0 0 pis [pis, pic, pdc, pdl, phf] -- num
   where
-    go n _ _ [] = n - 1
-    go n l r (p:ps)
+    go num n _ _ [] = n - 1
+    go num n l r (p:ps)
       | num `between` (l, r) = n
-      | otherwise = go (n + 1) r (r + p) ps
+      | otherwise = go num (n + 1) r (r + p) ps

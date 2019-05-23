@@ -5,12 +5,12 @@ import Data.Random          (StdRandom (..), runRVar)
 import System.Environment
 
 import Model                (Alignment (..))
-import MultipleSeqAlignment (run)
+import MultipleSeqAlignment (defaultConfig, run)
 import Utils                (fill, mkAlignment)
 
 main :: IO ()
 main = do
   args <- getArgs
   al <- mkAlignment . lines <$> readFile (head args)
-  result <- runRVar (run al) StdRandom
+  result <- runRVar (run defaultConfig al) StdRandom
   mapM_ putStrLn . fill . aProteins $ result

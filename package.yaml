@@ -25,6 +25,7 @@ dependencies:
 - containers
 - vector
 - hspec
+- transformers
 
 library:
   source-dirs: src
