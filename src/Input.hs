@@ -1,9 +1,9 @@
 module Input where
 
-import           Data.List            (groupBy)
-import           Data.Vector          (fromList)
-import           Model                (Alignment (..), Protein (..))
-import           MultipleSeqAlignment (scoreProteins)
+import           Data.List   (groupBy)
+import           Data.Vector (fromList)
+import           Model       (Alignment (..), Protein (..))
+import           Scoring     (scoreProteins)
 
 mkAl :: [String] -> Alignment
 mkAl input = Alignment seqs (scoreProteins seqs)
@@ -32,9 +32,9 @@ mkAl input = Alignment seqs (scoreProteins seqs)
 
 simpl = mkAl ["KMMEEAABBGHGHI", "M----MABGHI", "EAA-B---BHHI"]
 
-simpl2 = mkAl ["KMMEEAABBGHGHI", "MMA-BGHI", "EA--ABB--HH----I"]
+simpl2 = mkAl ["KMMEEAABBGHGHI", "-MM---AB---GHI", "----EAABB-H-HI"]
 
-inp = mkAl [aa1, aa2]
+inp = mkAl [aa1, aa2, aa3, aa4]
 
 aa1 =
   "MASKRIPLVAGNWKMNFDHLEATYFVQKLVWLLRDAHFDFKRCEVALFPSFTSLRSVQVLVEADKLHVAYGAQSVSVTTQGAFTGDVSADMIAHLGCSYVIVGHSERRKYHPEDDANIVDQVRAVLAAGMQPILCVGESFEERRQGIELDFAVGQVRDVTRDLNEEQAAKLIVAYEPVWAIGTGMVATPQSAQDAANAIRNDLKTTFGTKVSDSVRILYGGSVTSKNAAELISQPDVDGFLIGGAALDVEELAKIARLALKSTKSRN"

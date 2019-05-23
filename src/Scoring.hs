@@ -1,11 +1,11 @@
 {-# LANGUAGE TupleSections #-}
 
 module Scoring
-  ( scorePair
+  ( scoreProteins
   ) where
 
 import           Blosum          (anotherGap, blosum62, fstGap)
-import           Data.List       (sortOn)
+import           Data.List       (sortOn, tails)
 import qualified Data.Map.Strict as Map (lookup)
 import           Data.Maybe      (fromMaybe)
 import           Data.Vector     (Vector, slice)
@@ -17,6 +17,9 @@ data ProteinID
   = A
   | B
   deriving (Eq)
+
+scoreProteins :: [Protein] -> Int
+scoreProteins al = sum [scorePair a b | (a:rest) <- tails al, b <- rest]
 
 scorePair :: Protein -> Protein -> Int
 scorePair Protein {pSeq = s1, pGaps = g1} Protein {pSeq = s2, pGaps = g2} =

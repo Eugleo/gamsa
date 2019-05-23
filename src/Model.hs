@@ -1,7 +1,6 @@
 module Model
   ( Generation
   , Alignment(..)
-  , State(..)
   , Protein(..)
   , Gap
   ) where
@@ -26,14 +25,5 @@ data Protein = Protein
   , pGaps         :: [Gap]
   , pMeanGapCount :: Double -- TODO: Move this to alignment or someplace else
   } deriving (Show, Eq, Ord)
-
--- (prob, tot, diff)
-data State =
-  S (Double, Int, Int)
-    (Double, Int, Int)
-    (Double, Int, Int)
-    (Double, Int, Int)
-    (Double, Int, Int)
-  deriving (Show, Eq)
 
 type Gap = (Int, Int)
