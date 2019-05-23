@@ -3,46 +3,52 @@ module Genetics.Crossover
   , recombineH
   ) where
 
-import Data.List        (sortOn)
+import Data.List        (partition)
 import Data.Random      (RVar, stdUniform, uniform)
 
 import Genetics.Scoring (scoreProteins)
-import Model            (Alignment (..), Gap, Protein (..))
+import Model            (Alignment (..), Protein (..))
 
+-- | Udělá horizontální crossover dvou alignmentů (A1 a A2), které se (mezerami) liší,
+-- ale jejichž proteiny jsou stejné. Vytvoří nový alignment,
+-- v němž budou v každém jednotlivém proteinu mezery náhodně buďto z A1, nebo A2.
 recombineH :: Alignment -> Alignment -> RVar Alignment
-recombineH a@Alignment {aProteins = protA} Alignment {aProteins = protB}
-  | protA == protB = return a
+recombineH al@Alignment {aProteins = proteinsA} Alignment {aProteins = proteinsB}
+  | proteinsA == proteinsB = return al -- nemusíme nic kombinovat, alignmenty jsou stejné
   | otherwise = do
-    newProt <- mapM recombineProt (zip protA protB)
-    return $ Alignment newProt (scoreProteins newProt)
-  where
-    recombineProt (a, Protein {pGaps = gapsB}) = do
-      coin <- stdUniform
-      if coin
-        then return a
-        else return $ Protein (pSeq a) gapsB (pMeanGapCount a)
+    newProteins <- mapM recombineH' (zip proteinsA proteinsB)
+    return $ Alignment newProteins (scoreProteins newProteins)
 
+-- | Pomocná funkce k recombineH, provádí samotnou rekombinaci dvou proteinů.
+recombineH' :: (Protein, Protein) -> RVar Protein
+recombineH' (p1, p2) = do
+  coin <- stdUniform
+  if coin
+    -- p1 i p2 mají stejné hodnoty pSeq i pMeanGapCount, liší se pouze v mezerách
+    then return p1
+    else return p2
+
+-- | Udělá vertikální crossover dvou alignmentů (A1 a A2), které se (mezerami) liší,
+-- ale jejichž proteiny jsou stejné. Vytvoří nový alignment,
+-- v němž budou u všech proteinů mezery před k-tou aminokyselinou z A1 (A2) a za k-tou
+-- aminokyselinou budou všechny mezery z A2 (A1).
 recombineV :: Alignment -> Alignment -> RVar Alignment
-recombineV a@Alignment {aProteins = protA} Alignment {aProteins = protB} = do
-  i <- breakpoint
-  newProt <- mapM (recombineProt i) (zip protA protB)
-  return $ Alignment newProt (scoreProteins newProt)
+recombineV al@Alignment {aProteins = proteinsA} Alignment {aProteins = proteinsB}
+  | proteinsA == proteinsB = return al -- nemusíme nic kombinovat, alignmenty jsou stejné
+  | otherwise = do
+    breakpoint <- uniform 1 (minLength - 1) -- generujeme index AK, podle které proteiny rozdělíme
+    newProteins <- mapM (recombineV' breakpoint) (zip proteinsA proteinsB)
+    return $ Alignment newProteins (scoreProteins newProteins)
   where
-    seqLength s = length (pSeq s) -- + foldr (\g acc -> snd g + acc) 0 (pGaps s)
-    minLength = minimum $ map seqLength protA
-    breakpoint = uniform 1 (minLength - 1)
-    recombineProt i (p1, p2) = do
-      let (g1A, g2A) = splitGaps i (sortOn fst $ pGaps p1)
-      let (g1B, g2B) = splitGaps i (sortOn fst $ pGaps p2)
-      coin <- stdUniform
-      if coin
-        then return $ Protein (pSeq p1) (g1A ++ g2B) (pMeanGapCount p1)
-        else return $ Protein (pSeq p1) (g1B ++ g2A) (pMeanGapCount p1)
+    minLength = minimum $ map (length . pSeq) proteinsA -- délka nejkratšího proteinu (bez mezer)
 
-splitGaps :: Int -> [Gap] -> ([Gap], [Gap])
-splitGaps i = helper []
-  where
-    helper acc [] = (acc, [])
-    helper acc (g@(ga, _):gs)
-      | ga < i = helper (g : acc) gs
-      | otherwise = (acc, gs)
+-- | Pomocná funkce k recombineV, provádí samotnou rekombinaci dvou proteinů.
+recombineV' :: Int -> (Protein, Protein) -> RVar Protein
+recombineV' i (Protein {pSeq = seq, pGaps = gaps1, pMeanGapCount = mgc}, Protein {pGaps = gaps2}) = do
+  let (g1, g2) = partition ((> i) . fst) gaps1
+  let (h1, h2) = partition ((> i) . fst) gaps2
+  coin <- stdUniform
+  if coin
+    -- oba proteiny mají stejné hodnoty pSeq i pMeanGapCount, liší se pouze v mezerách
+    then return $ Protein seq (g1 ++ h2) mgc
+    else return $ Protein seq (h1 ++ g2) mgc
