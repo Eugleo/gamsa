@@ -60,7 +60,7 @@ blankStats = S [] [] [] [] []
 nextGenProbabilities :: MutationState -> Probabilities
 nextGenProbabilities (p@P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) =
   let fin = map (/ newProbSum) newProbList -- chceme, aby finální pravděpodobnosti měly součet 1.0
-   in P (head fin) (fin !! 1) (fin !! 2) (fin !! 3) (fin !! 4)
+   in p -- možno nahradit: P (head fin) (fin !! 1) (fin !! 2) (fin !! 3) (fin !! 4)
   where
     probList = [pis, pic, pdc, pdl, phf] -- se seznamy se lépe pracuje
     statList = [sis, sic, sdc, sdl, shf]

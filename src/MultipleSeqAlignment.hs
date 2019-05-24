@@ -33,7 +33,7 @@ data Config = Config
 
 -- | Výchozí nastavení
 defaultConfig :: Config
-defaultConfig = Config 5000 (P 0.2 0.35 0.2 0.05 0.2) 3 33 1
+defaultConfig = Config 50000 (P 0.5 0.2 0.1 0.1 0.1) 3 33 1
 
 -- | Spustí genetický algoritmus s takovými paramtery
 run :: Config -> Alignment -> RVar Alignment
