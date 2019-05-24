@@ -14,7 +14,6 @@ module MutationProbabilities
 import Control.Monad.Trans.Class      (lift)
 import Control.Monad.Trans.State.Lazy (StateT (..), get)
 import Data.Random                    (RVar, stdUniform)
-import Debug.Trace                    (traceShow)
 
 import Utils                          (between, maximumOn)
 
@@ -56,7 +55,7 @@ blankStats = S [] [] [] [] []
 
 -- | Tato funkce je volána vždy po dokončení jedné generace; zpracuje nasbíraná data
 -- a na základě nich spočítá nové hodnoty pravděpodobností jendotlivých operací.
--- Jsou používány komlikované vzorce z originálního paperu (DOI: 10.1155/2009/963150),
+-- Jsou používány komplikované vzorce z originálního paperu (DOI: 10.1155/2009/963150),
 -- víceméně se jedná o to, že operace s pozitivním dopadem budou mít vyšší pravděpodobnost.
 nextGenProbabilities :: MutationState -> Probabilities
 nextGenProbabilities (p@P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) =
