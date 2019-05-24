@@ -8,7 +8,8 @@ module MultipleSeqAlignment
 
 import Control.Monad                  (replicateM)
 import Control.Monad.Trans.Class      (lift)
-import Control.Monad.Trans.State.Lazy (StateT (..), evalStateT, get, put)
+import Control.Monad.Trans.State.Lazy (StateT (..), evalStateT, get, modify,
+                                       put)
 import Data.Function                  (on)
 import Data.List                      (sortBy)
 import Data.Ord                       (Down (..))
@@ -19,7 +20,8 @@ import Genetics.Crossover             (recombineH, recombineV)
 import Genetics.Mutation              (mutate)
 import Model                          (Alignment (..), Generation)
 import MutationProbabilities          (MutationState, Probabilities (..),
-                                       Stats (..))
+                                       blankStats, nextGenProbabilities,
+                                       sToList)
 import Utils                          (between, choose)
 
 data Config = Config
@@ -31,7 +33,7 @@ data Config = Config
   }
 
 defaultConfig :: Config
-defaultConfig = Config 2000 (P 0.2 0.2 0.2 0.2 0.2) 3 33 1
+defaultConfig = Config 20000 (P 0.2 0.2 0.2 0.2 0.2) 5 19 5
 
 run :: Config -> Alignment -> RVar Alignment
 run config@Config { generationCount
@@ -40,7 +42,7 @@ run config@Config { generationCount
                   , tournamentCount
                   , eliteCount
                   } al = do
-  let state = (startingProbabilities, S [] [] [] [] [])
+  let state = (startingProbabilities, blankStats)
   let populationSize = tournamentSize * tournamentCount + eliteCount
   generation <- mkPopulation populationSize al state
   fin <- evalStateT (repeatNGenerations config generation generationCount) state
@@ -59,13 +61,19 @@ mkPopulation size al = evalStateT (go size [])
 repeatNGenerations ::
      Config -> Generation -> Int -> StateT MutationState RVar Generation
 repeatNGenerations _ g 0 = return g
-repeatNGenerations config g n =
+repeatNGenerations config g n = do
+  (prob, _) <- get
+  let message =
+        "Run " ++
+        show n ++
+        ", top 3: " ++
+        show (map aScore $ take 3 tops) ++ ", p: " ++ show (stateMsg prob)
   if n `mod` 100 == 0
-    then traceShow
-           ("Remaining runs: " ++ show n, map aScore $ take 3 tops)
-           result
+    then traceShow message result
     else result
   where
+    stateMsg P {pis, pic, pdc, pdl, phf} =
+      map (round . (* 100)) [pis, pic, pdc, pdl, phf]
     result =
       nextGeneration config g >>= \newGeneration ->
         repeatNGenerations config newGeneration (n - 1)
@@ -75,9 +83,9 @@ nextGeneration :: Config -> Generation -> StateT MutationState RVar Generation
 nextGeneration Config {tournamentSize, tournamentCount, eliteCount} g = do
   let topN = top eliteCount g
   alignments <- concat <$> replicateM tournamentCount go
+  modify (\st@(_, s) -> (nextGenProbabilities st, blankStats))
   return $ topN ++ alignments
   where
-    go :: StateT MutationState RVar [Alignment]
     go = do
       elite <- lift $ tournament tournamentSize g
       mapM mutate elite

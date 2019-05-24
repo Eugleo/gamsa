@@ -4,17 +4,16 @@ module Genetics.Mutation
   ( mutate
   ) where
 
-import Control.Monad                        (replicateM)
 import Control.Monad.Trans.Class            (lift)
 import Control.Monad.Trans.State.Lazy       (StateT (..), modify)
-import Data.List                            (partition)
-import Data.Random                          (RVar, stdUniform, uniform)
+import Data.List                            (group, partition, sort)
+import Data.Random                          (RVar, uniform)
 import Data.Random.Distribution.Exponential (exponential)
 
 import Genetics.Scoring                     (scoreProteins)
 import Model
 import MutationProbabilities                (MutationState, Stats (..), listToS,
-                                             pick)
+                                             pickOperationIndex)
 import Utils                                (choose, updateAt)
 
 type Mutator = StateT MutationState RVar Alignment
@@ -22,30 +21,53 @@ type Mutator = StateT MutationState RVar Alignment
 mutate :: Alignment -> Mutator
 mutate al@Alignment {aScore} = do
   count <- lift (exponential (1 / 1.8) :: RVar Float)
-  (opIndices, newAl) <- applyNTimes (round count) mutate' al
+  (opIndices, newAl) <- applyNTimes 1 mutate' al -- TODO: N times
   let dif = scoreProteins (aProteins newAl) - aScore
-  modify (updateMutationUseCounts opIndices dif)
+  modify $ updateMutationUseCounts opIndices dif
   return newAl
 
 updateMutationUseCounts :: [Int] -> Int -> MutationState -> MutationState
 updateMutationUseCounts indices dif (p, S {sis, sic, sdc, sdl, shf}) =
-  ( p
-  , listToS $
-    zipWith (flip (:)) [sis, sic, sdc, sdl, shf] $
-    map
-      (\x -> fromIntegral dif * fromIntegral x / fromIntegral usesTotal)
-      usesVector)
+  (p, listToS statsList)
   where
-    usesTotal = sum usesVector
-    usesVector =
-      foldr (\i acc -> updateAt i acc [acc !! i + 1]) [0, 0, 0, 0, 0] indices
+    go :: [Int] -> (Int, Int, Int, Int, Int) -> (Int, Int, Int, Int, Int)
+    go [] tp = tp
+    go (i:is) (a, b, c, d, e) =
+      case i of
+        0 -> go is (a + 1, b, c, d, e)
+        1 -> go is (a, b + 1, c, d, e)
+        2 -> go is (a, b, c + 1, d, e)
+        3 -> go is (a, b, c, d + 1, e)
+        4 -> go is (a, b, c, d, e + 1)
+        _ -> error "Wrong number was picked"
+    usesTotal =
+      let (a, b, c, d, e) = usesTup
+       in a + b + c + d + e
+    dSO x =
+      if usesTotal == 0
+        then 0
+        else fromIntegral dif * fromIntegral x / fromIntegral usesTotal
+    usesTup = go indices (0, 0, 0, 0, 0)
+    dSOList =
+      let (a, b, c, d, e) = usesTup
+       in [dSO a, dSO b, dSO c, dSO d, dSO e]
+    statsList =
+      let (a, b, c, d, e) = usesTup
+       in zipWith3
+            (\x xs uses ->
+               if uses == 0
+                 then xs
+                 else x : xs)
+            dSOList
+            [sis, sic, sdc, sdl, shf]
+            [a, b, c, d, e]
 
 applyNTimes ::
      Int
   -> (Alignment -> StateT MutationState RVar (Int, Alignment))
   -> Alignment
   -> StateT MutationState RVar ([Int], Alignment)
-applyNTimes 0 f a = f a >>= \(index, al) -> return ([index], al)
+applyNTimes 0 _ a = return ([], a)
 applyNTimes k f a = do
   (index, al) <- f a
   (indices, finalAl) <- applyNTimes (k - 1) f al
@@ -53,12 +75,13 @@ applyNTimes k f a = do
 
 mutate' :: Alignment -> StateT MutationState RVar (Int, Alignment)
 mutate' Alignment {aProteins} = do
-  operation <- (operations !!) <$> pick
-  (index, protein) <- lift $ choose aProteins
+  operationIndex <- pickOperationIndex
+  let operation = operations !! operationIndex
+  (proteinIndex, protein) <- lift $ choose aProteins
   newProtein <- lift $ operation protein
-  let newProteins = updateAt index [newProtein] aProteins
+  let newProteins = updateAt proteinIndex [newProtein] aProteins
   let newAl = Alignment newProteins (scoreProteins newProteins)
-  return (index, newAl)
+  return (operationIndex, newAl)
   where
     operations = [insert, increase, decrease, delete, shift]
 
