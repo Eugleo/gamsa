@@ -59,9 +59,9 @@ blankStats = S [] [] [] [] []
 -- Jsou používány komlikované vzorce z originálního paperu (DOI: 10.1155/2009/963150),
 -- víceméně se jedná o to, že operace s pozitivním dopadem budou mít vyšší pravděpodobnost.
 nextGenProbabilities :: MutationState -> Probabilities
-nextGenProbabilities (P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) =
+nextGenProbabilities (p@P {pis, pic, pdc, pdl, phf}, S {sis, sic, sdc, sdl, shf}) =
   let fin = map (/ newProbSum) newProbList -- chceme, aby finální pravděpodobnosti měly součet 1.0
-   in P (fin !! 0) (fin !! 1) (fin !! 2) (fin !! 3) (fin !! 4)
+   in P (head fin) (fin !! 1) (fin !! 2) (fin !! 3) (fin !! 4)
   where
     probList = [pis, pic, pdc, pdl, phf] -- se seznamy se lépe pracuje
     statList = [sis, sic, sdc, sdl, shf]

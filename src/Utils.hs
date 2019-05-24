@@ -4,6 +4,7 @@ module Utils
   , fill
   , mkAlignment
   , choose
+  , chooseI
   , updateAt
   ) where
 
@@ -39,10 +40,10 @@ fill' n Protein {pSeq = aa, pGaps = gaps} =
       | otherwise = go gps xs (c : acc)
 
 mkAlignment :: [String] -> Alignment
-mkAlignment input = Alignment seqs (scoreProteins seqs)
+mkAlignment input = Alignment seqs (scoreProteins seqs) (1 / seed)
   where
     seqs = map mkSeq input
-    mkSeq str = Protein (aa str) (gps str) (1 / seed)
+    mkSeq str = Protein (aa str) (gps str)
     seed =
       if denominator == 0
         then 1
@@ -67,6 +68,9 @@ choose :: [a] -> RVar (Int, a)
 choose xs = do
   index <- uniform 0 (length xs - 1)
   return (index, xs !! index)
+
+chooseI :: Foldable t => t a -> RVar Int
+chooseI xs = uniform 0 (length xs - 1)
 
 updateAt :: Int -> [a] -> [a] -> [a]
 updateAt i new xs = take i xs ++ (new ++ drop (i + 1) xs)

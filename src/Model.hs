@@ -10,8 +10,9 @@ import Data.Vector (Vector)
 type Generation = [Alignment]
 
 data Alignment = Alignment
-  { aProteins :: [Protein]
-  , aScore    :: Int
+  { aProteins        :: [Protein]
+  , aScore           :: Int
+  , aStartingGapSize :: Double
   } deriving (Show)
 
 instance Eq Alignment where
@@ -21,9 +22,8 @@ instance Ord Alignment where
   Alignment {aScore = s1} `compare` Alignment {aScore = s2} = s1 `compare` s2
 
 data Protein = Protein
-  { pSeq          :: Vector Char
-  , pGaps         :: [Gap]
-  , pMeanGapCount :: Double -- TODO: Move this to alignment or someplace else
+  { pSeq  :: Vector Char
+  , pGaps :: [Gap]
   } deriving (Show, Eq, Ord)
 
 type Gap = (Int, Int)

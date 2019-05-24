@@ -7,7 +7,7 @@ module Genetics.ScoringTable
 import Data.Map (Map, fromList)
 
 fstGap :: Int
-fstGap = -4
+fstGap = -1
 
 anotherGap :: Int
 anotherGap = -1
