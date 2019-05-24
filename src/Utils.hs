@@ -8,6 +8,7 @@ module Utils
   , updateAt
   ) where
 
+-- V tomto modulu jsou pomocné funkce, které se nehodily nikam jinam.
 import Data.List        (groupBy, maximumBy, sortOn)
 import Data.Random      (RVar, uniform)
 import Data.Vector      (fromList, toList)
@@ -15,12 +16,16 @@ import Data.Vector      (fromList, toList)
 import Genetics.Scoring (scoreProteins)
 import Model            (Alignment (..), Protein (..))
 
+-- | Obdoba sortOn.
 maximumOn :: Ord b => (a -> b) -> [a] -> a
 maximumOn f = maximumBy (\a b -> compare (f a) (f b))
 
+-- | Je číslo x v intervalu (l, r)?
 between :: Ord a => a -> (a, a) -> Bool
 between x (l, r) = (l <= x) && (x <= r)
 
+-- | Zobrazí protein (dvojici sekvence, [mezery]) jako string, tedy interkaluje mezery do sekvence.
+-- Doplní také mezery na konec proteinu, aby byl alignment zarovnaný.
 fill :: [Protein] -> [String]
 fill al = map (fill' maxSequenceLength) al
   where
@@ -39,6 +44,8 @@ fill' n Protein {pSeq = aa, pGaps = gaps} =
       | start <= i = go gs xs (c : replicate leng '-' ++ acc)
       | otherwise = go gps xs (c : acc)
 
+-- | Ze seznamu proteinů zadaných ve stringu vytvoří prvnotní alignment. Slouží vlastně jako protějšek
+-- k funkci fill (ze stringu udělá dvojici (sekvence bez mezer, [mezery])). Zjednodušuje vkládání vstupu.
 mkAlignment :: [String] -> Alignment
 mkAlignment input = Alignment seqs (scoreProteins seqs) seed
   where
@@ -64,13 +71,16 @@ mkAlignment input = Alignment seqs (scoreProteins seqs) seed
         xs
     go _ acc [] = acc
 
+-- | Vybere náhodný element ze seznamu a vrátí jej společně s jeho indexem.
 choose :: [a] -> RVar (Int, a)
 choose xs = do
   index <- uniform 0 (length xs - 1)
   return (index, xs !! index)
 
+-- | Vybere náhodný index ze seznamu.
 chooseI :: Foldable t => t a -> RVar Int
 chooseI xs = uniform 0 (length xs - 1)
 
+-- Změní k-tou položku v seznamu za jinou.
 updateAt :: Int -> [a] -> [a] -> [a]
-updateAt i new xs = take i xs ++ (new ++ drop (i + 1) xs)
+updateAt i new xs = take i xs ++ (new ++ drop (i + 1) xs) -- uzávorkování projistotu
