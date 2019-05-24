@@ -20,8 +20,7 @@ import Genetics.Crossover             (recombineH, recombineV)
 import Genetics.Mutation              (mutate)
 import Model                          (Alignment (..), Generation)
 import MutationProbabilities          (MutationState, Probabilities (..),
-                                       blankStats, nextGenProbabilities,
-                                       sToList)
+                                       blankStats, nextGenProbabilities)
 import Utils                          (between, choose)
 
 data Config = Config
@@ -32,8 +31,9 @@ data Config = Config
   , eliteCount            :: Int
   }
 
+-- | Výchozí nastavení
 defaultConfig :: Config
-defaultConfig = Config 5000 (P 0.2 0.2 0.2 0.2 0.2) 3 33 1
+defaultConfig = Config 5000 (P 0.2 0.35 0.2 0.05 0.2) 3 33 1
 
 run :: Config -> Alignment -> RVar Alignment
 run config@Config { generationCount

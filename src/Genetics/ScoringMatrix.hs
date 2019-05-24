@@ -9,7 +9,7 @@ import Data.Map (Map, fromList)
 -- | První mezera zpravidla "stojí" více než následující, preferujeme
 -- pár dlouhých mezery před větším počtem krátkých
 fstGap :: Int
-fstGap = -1
+fstGap = -2
 
 anotherGap :: Int
 anotherGap = -1

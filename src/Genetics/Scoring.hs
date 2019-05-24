@@ -10,6 +10,8 @@ import           Data.Maybe             (fromMaybe)
 import           Data.Vector            (Vector, slice)
 import qualified Data.Vector            as V (zip)
 
+import           Debug.Trace            (traceShow)
+
 import           Genetics.ScoringMatrix (anotherGap, blosum62, fstGap)
 import           Model                  (Gap, Protein (..))
 
@@ -63,8 +65,10 @@ scorePairGo ::
   -> Int -- ^ akumulátor skóre
   -> [(Gap, ProteinID)] -- ^ seznam zbývajících mezer
   -> Int
-scorePairGo (s1, s2, minLength, _) i a b acc [] -- nezbývají mezery, stačí nám oskórovat zbytek sekvencí
- = acc + scoreProteinSlice (i + a) (i + b) (minLength - i) s1 s2
+scorePairGo (s1, s2, minLength, maxLength) i a b acc [] -- nezbývají mezery, stačí nám oskórovat zbytek sekvencí
+ =
+  acc + scoreProteinSlice (i + a) (i + b) (minLength - i) s1 s2 +
+  scoreGap (0, maxLength - minLength)
 scorePairGo t@(s1, s2, minLength, maxLength) i a b acc ((g@(gi, gl), pID):gs)
   | i >= minLength -- prošli jsme celý kratší protein, stačí nám oskórovat zbylé mezery v delším proteinu
    =
