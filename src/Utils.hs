@@ -40,7 +40,7 @@ fill' n Protein {pSeq = aa, pGaps = gaps} =
       | otherwise = go gps xs (c : acc)
 
 mkAlignment :: [String] -> Alignment
-mkAlignment input = Alignment seqs (scoreProteins seqs) (1 / seed)
+mkAlignment input = Alignment seqs (scoreProteins seqs) seed
   where
     seqs = map mkSeq input
     mkSeq str = Protein (aa str) (gps str)
