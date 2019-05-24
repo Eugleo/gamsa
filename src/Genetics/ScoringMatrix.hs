@@ -1,4 +1,4 @@
-module Genetics.ScoringTable
+module Genetics.ScoringMatrix
   ( blosum62
   , fstGap
   , anotherGap
@@ -6,12 +6,15 @@ module Genetics.ScoringTable
 
 import Data.Map (Map, fromList)
 
+-- | První mezera zpravidla "stojí" více než následující, preferujeme
+-- pár dlouhých mezery před větším počtem krátkých
 fstGap :: Int
 fstGap = -1
 
 anotherGap :: Int
 anotherGap = -1
 
+-- BLOSUM 62 skórovací tabulka, která obsahuje ceny všech možných kombinací aminokyselin
 blosum62 :: Map (Char, Char) Int
 blosum62 = fromList $ table ++ [((b, a), c) | ((a, b), c) <- table, a /= b]
   where
