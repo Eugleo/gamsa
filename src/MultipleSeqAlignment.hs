@@ -35,6 +35,7 @@ data Config = Config
 defaultConfig :: Config
 defaultConfig = Config 5000 (P 0.2 0.35 0.2 0.05 0.2) 3 33 1
 
+-- | Spustí genetický algoritmus s takovými paramtery
 run :: Config -> Alignment -> RVar Alignment
 run config@Config { generationCount
                   , startingProbabilities
@@ -58,6 +59,7 @@ mkPopulation size al = evalStateT (go size [])
       put oldState
       go (n - 1) (newAl : acc)
 
+-- | Tato funkce je zde pouze pro debugovací účely, může být nahrazena repeatM
 repeatNGenerations ::
      Config -> Generation -> Int -> StateT MutationState RVar Generation
 repeatNGenerations _ g 0 = return g
@@ -79,6 +81,9 @@ repeatNGenerations config g n = do
         repeatNGenerations config newGeneration (n - 1)
     tops = sortBy (compare `on` Down) g
 
+-- | Generuje novou generaci s vlastnostmi, které jsou definovány v Configu. Nová generace
+-- bude mít pravděpodobnosti jednotlivých mutačních operací upravené na základě dat,
+-- která byla posbírána v minulé generaci.
 nextGeneration :: Config -> Generation -> StateT MutationState RVar Generation
 nextGeneration Config {tournamentSize, tournamentCount, eliteCount} g = do
   let topN = top eliteCount g
@@ -90,14 +95,19 @@ nextGeneration Config {tournamentSize, tournamentCount, eliteCount} g = do
       elite <- lift $ tournament tournamentSize g
       mapM mutate elite
 
+-- | Vrátí N alignmentů s nejvyšším skóre. Tyto alignmenty půjdou rovnou do další generace.
 top :: Int -> Generation -> [Alignment]
 top n = take n . sortBy (compare `on` Down)
 
+-- | Uspořádá turnaj velikosti K. Alignment s nejvyšším skóre půjde beze změny (neo případně s mutací)
+-- do další generace, zatímco zbylé alignmenty projdou crossoverem s tímto výhercem.
 tournament :: Int -> Generation -> RVar [Alignment]
 tournament size g = do
   contenders <- fmap (map snd) . replicateM size $ choose g
   let first = maximum contenders
   coin <- stdUniform :: RVar Float
+  -- 30% šance na horizontální crossover, 50% na vertikální
+  -- při crossoveru first s first se vráti first nezměněn
   if | coin `between` (0, 0.3) -> mapM (recombineH first) contenders
      | coin `between` (0.3, 0.8) -> mapM (recombineV first) contenders
      | otherwise -> return contenders
